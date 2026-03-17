@@ -13,6 +13,8 @@ import urllib.parse
 import json
 import tempfile
 import os
+import mysql.connector
+from mysql.connector import Error as MySQLError
 from dotenv import load_dotenv
 from git import Repo
 from zapv2 import ZAPv2
@@ -248,25 +250,100 @@ def api_web_scan():
     return jsonify({"status": "success", "findings": findings})
 
 @app.route('/api/scan/container', methods=['POST'])
-def api_container_scan():
-    image_name = request.json.get('image')
+def scan_container():
+    data = request.json
+    # Default to nginx:latest if the user leaves the input blank
+    image_name = data.get('image', 'nginx:latest') 
     findings = []
+    
     try:
+        print(f"\n🐳 REAL ENGINE ENGAGED: Initiating live Trivy scan on {image_name}...")
+        print("   [Downloading image layers and querying the National Vulnerability Database...]")
+        
+        # This breaks out of Python and executes the actual Trivy binary on your OS
         cmd = ["trivy", "image", "--format", "json", "--quiet", image_name]
+        
+        # capture_output=True intercepts what Trivy would normally print to the terminal
         res = subprocess.run(cmd, capture_output=True, text=True)
+        
+        # Check if Trivy actually returned data
         if res.stdout:
-            data = json.loads(res.stdout)
-            for result in data.get("Results", []):
-                for vuln in result.get("Vulnerabilities", []):
-                    findings.append({
-                        "Type": "Container CVE",
-                        "Severity": vuln.get("Severity", "Unknown").capitalize(),
-                        "Issue": f"{vuln.get('PkgName')} ({vuln.get('VulnerabilityID')})",
-                        "Fix": f"Fixed in: {vuln.get('FixedVersion', 'Not Available')}"
-                    })
+            try:
+                trivy_data = json.loads(res.stdout)
+                
+                # Dig through Trivy's complex JSON schema to find the actual vulnerabilities
+                for result in trivy_data.get("Results", []):
+                    for vuln in result.get("Vulnerabilities", []):
+                        # Format it perfectly for our React dashboard
+                        findings.append({
+                            "Type": "Container OS Vulnerability",
+                            "Severity": vuln.get("Severity", "UNKNOWN").capitalize(),
+                            "Issue": f"{vuln.get('PkgName')} ({vuln.get('VulnerabilityID')}) - {vuln.get('Title', 'No title')}",
+                            "Fix": f"Update to: {vuln.get('FixedVersion', 'No patch currently available')}"
+                        })
+            except json.JSONDecodeError:
+                print("🚨 Error: Trivy did not return valid JSON. It might have encountered an error pulling the image.")
+                return jsonify({"error": f"Failed to parse Trivy output. Ensure '{image_name}' is a valid public Docker image."}), 500
+
+        print(f"✅ Real Container Scan Complete. Discovered {len(findings)} live CVEs.")
+        return jsonify({"findings": findings})
+        
+    except FileNotFoundError:
+        # This triggers if Python asks Windows/Linux to run "trivy" and the OS says "I don't know what that is"
+        print("🚨 FATAL ERROR: Trivy binary not found in system PATH.")
+        return jsonify({"error": "Trivy engine is not installed or not in your system PATH. Please install Aqua Security Trivy."}), 500
+        
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
-    return jsonify({"status": "success", "findings": findings})
+        print(f"🚨 Unhandled Container Engine Failure: {str(e)}")
+        return jsonify({"error": f"Internal Engine Error: {str(e)}"}), 500
+
+@app.route('/api/scan/dockerfile', methods=['POST'])
+def scan_dockerfile():
+    data = request.json
+    dockerfile_content = data.get('content')
+    
+    if not dockerfile_content:
+        return jsonify({"error": "No Dockerfile content provided"}), 400
+
+    findings = []
+    temp_path = ""
+    
+    try:
+        print("\n📄 REAL ENGINE ENGAGED: Initiating IaC scan on raw Dockerfile...")
+        
+        # 1. Create a secure, temporary file on your Windows/Linux machine to hold the code
+        with tempfile.NamedTemporaryFile(delete=False, mode='w', suffix='Dockerfile') as temp_file:
+            temp_file.write(dockerfile_content)
+            temp_path = temp_file.name
+
+        # 2. Command Trivy to scan the file for misconfigurations and bad base images
+        cmd = ["trivy", "config", "--format", "json", "--quiet", temp_path]
+        res = subprocess.run(cmd, capture_output=True, text=True)
+        
+        # 3. Parse the output
+        if res.stdout:
+            trivy_data = json.loads(res.stdout)
+            
+            for result in trivy_data.get("Results", []):
+                for misconf in result.get("Misconfigurations", []):
+                    findings.append({
+                        "Type": "Dockerfile Misconfiguration",
+                        "Severity": misconf.get("Severity", "UNKNOWN").capitalize(),
+                        "Issue": misconf.get("Title", "Unknown Configuration Flaw"),
+                        "Fix": misconf.get("Resolution", "Review Dockerfile best practices.")
+                    })
+                    
+        print(f"✅ Dockerfile Scan Complete. Discovered {len(findings)} structural flaws.")
+        return jsonify({"findings": findings})
+        
+    except Exception as e:
+        print(f"🚨 Dockerfile Engine Failure: {str(e)}")
+        return jsonify({"error": f"Internal Engine Error: {str(e)}"}), 500
+        
+    finally:
+        # 4. ALWAYS clean up the temporary file so your server hard drive doesn't fill up
+        if temp_path and os.path.exists(temp_path):
+            os.remove(temp_path)
 
 @app.route('/api/ai/remediate', methods=['POST'])
 def api_ai_remediate():
@@ -435,6 +512,147 @@ def serve_report(filename):
         
     return send_from_directory(reports_dir, filename)
 
+
+##------------------------------------------------------##
+#----DBVA: Database Vulnerability Assessment Endpoint----#
+##------------------------------------------------------##
+
+@app.route('/api/scan/database', methods=['POST'])
+def scan_database():
+    data = request.json
+    db_type = data.get('db_type', 'mysql').lower()
+    host = data.get('host', 'localhost')
+    port = data.get('port', 3306)
+    user = data.get('user', 'root')
+    password = data.get('password', '')
+    
+    findings = []
+    
+    print(f"\n🗄️ REAL ENGINE ENGAGED: Initiating Infrastructure Scan on {db_type.upper()} at {host}:{port}...")
+
+    # MOCK BETA DATABASES
+    if db_type in ['postgresql', 'mssql', 'oracle']:
+        return jsonify({
+            "status": "beta",
+            "message": f"Deep Vulnerability Assessment for {db_type.upper()} is currently in Enterprise Beta. Please use the MySQL module for the current stable MVP release.",
+            "findings": []
+        })
+
+    # MYSQL DEEP SCANNER
+    if db_type == 'mysql':
+        try:
+            connection = mysql.connector.connect(
+                host=host,
+                port=port,
+                user=user,
+                password=password,
+                connection_timeout=5
+            )
+            
+            if connection.is_connected():
+                cursor = connection.cursor(dictionary=True)
+                
+                # 1. Privilege Escalation Check (Global Super Admins)
+                try:
+                    cursor.execute("SELECT user, host FROM mysql.user WHERE Super_priv = 'Y';")
+                    for su in cursor.fetchall():
+                        if su['host'] == '%':
+                            findings.append({
+                                "Type": "IAM Misconfiguration",
+                                "Severity": "Critical",
+                                "Issue": f"Super Admin Account ({su['user']}@%) Exposed Globally",
+                                "Fix": f"Restrict the '{su['user']}' account to 'localhost'."
+                            })
+                except Exception: pass
+
+                # 2. Network Bind Address Check
+                try:
+                    cursor.execute("SHOW VARIABLES LIKE 'bind_address';")
+                    bind_address = cursor.fetchone()
+                    if bind_address and bind_address['Value'] in ['0.0.0.0', '*']:
+                        findings.append({
+                            "Type": "Network Exposure",
+                            "Severity": "High",
+                            "Issue": "Database Bound to Public Interface (0.0.0.0)",
+                            "Fix": "Edit my.cnf to set bind-address = 127.0.0.1."
+                        })
+                except Exception: pass
+
+                # 3. Password Validation Plugin Check
+                try:
+                    cursor.execute("SHOW VARIABLES LIKE 'validate_password%';")
+                    pwd_policy = cursor.fetchall()
+                    if not pwd_policy:
+                        findings.append({
+                            "Type": "Authentication Policy",
+                            "Severity": "Medium",
+                            "Issue": "Weak or Disabled Password Validation Plugin",
+                            "Fix": "Enable the validate_password plugin to enforce strong credential requirements."
+                        })
+                except Exception: pass
+
+                # 4. Anonymous User Check (HUGE risk, common in old XAMPP)
+                try:
+                    cursor.execute("SELECT user, host FROM mysql.user WHERE user = '';")
+                    anon_users = cursor.fetchall()
+                    if anon_users:
+                        findings.append({
+                            "Type": "Access Control",
+                            "Severity": "Critical",
+                            "Issue": "Anonymous User Accounts Detected",
+                            "Fix": "Execute 'DROP USER \"\"@\"localhost\";' to remove anonymous access."
+                        })
+                except Exception: pass
+
+                # 5. Local Infile Check (Allows hackers to read local server files via SQLi)
+                try:
+                    cursor.execute("SHOW VARIABLES LIKE 'local_infile';")
+                    local_infile = cursor.fetchone()
+                    if local_infile and local_infile['Value'].upper() == 'ON':
+                        findings.append({
+                            "Type": "Data Exfiltration Risk",
+                            "Severity": "High",
+                            "Issue": "LOCAL INFILE capability is enabled",
+                            "Fix": "Set 'local_infile = 0' in my.cnf to prevent arbitrary file reading."
+                        })
+                except Exception: pass
+
+                # 6. Default 'test' Database Check
+                try:
+                    cursor.execute("SHOW DATABASES LIKE 'test';")
+                    test_db = cursor.fetchone()
+                    if test_db:
+                        findings.append({
+                            "Type": "Configuration Best Practices",
+                            "Severity": "Low",
+                            "Issue": "Default 'test' database exists",
+                            "Fix": "Execute 'DROP DATABASE test;' to remove unnecessary default databases."
+                        })
+                except Exception: pass
+
+                # 7. Unencrypted Transport Check
+                try:
+                    cursor.execute("SHOW VARIABLES LIKE 'require_secure_transport';")
+                    ssl_req = cursor.fetchone()
+                    if ssl_req and ssl_req['Value'].upper() == 'OFF':
+                        findings.append({
+                            "Type": "Data in Transit",
+                            "Severity": "Medium",
+                            "Issue": "Unencrypted Traffic Allowed (SSL/TLS Not Required)",
+                            "Fix": "Set 'require_secure_transport = ON' to force encrypted connections."
+                        })
+                except Exception: pass
+
+                cursor.close()
+                connection.close()
+                
+        except Exception as e:
+            return jsonify({"error": f"Database Authentication Failed: {str(e)}"}), 401
+
+    return jsonify({
+        "status": "success",
+        "findings": findings
+    })
 
 if __name__ == '__main__':
     app.run(port=5000, debug=True)

@@ -3,12 +3,11 @@ import axios from 'axios';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   ShieldAlert, Code2, Globe, Box, LayoutGrid, Download, Trash2, Github, 
-  Activity, AlertTriangle, ChevronLeft, ChevronRight, Filter, X, Search, 
+  Activity, AlertTriangle, ChevronLeft, ChevronRight, Filter, X, 
   TerminalSquare, Sparkles, Server, Zap, Bug, FileCode2, LogOut, Bell, 
   CheckCircle, XCircle, Info, Clock, FileText, Sliders, GripVertical, Send,
-  Briefcase, ShieldCheck, Scale // <-- NEW ICONS FOR GRC
+  ShieldCheck, Scale, FileCode, HardDrive, User, Key, Database
 } from 'lucide-react';
-// NEW IMPORTS FOR THE RADAR CHART
 import { BarChart, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis } from 'recharts';
 
 // ==========================================
@@ -95,14 +94,48 @@ function App() {
   // --- CORE UI STATE ---
   const [activeTab, setActiveTab] = useState('Dashboard');
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
-  const [loading, setLoading] = useState(false);
   const [aiModal, setAiModal] = useState(null);
   const [aiLoading, setAiLoading] = useState(false);
   const [chatInput, setChatInput] = useState('');
   const messagesEndRef = useRef(null);
   const [isExportHovered, setIsExportHovered] = useState(false);
+  const [containerScanMode, setContainerScanMode] = useState('image');
+  const [dockerfileContent, setDockerfileContent] = useState('');
 
-  // --- 🧠 AI STATE (Chat & Red Team PoC) ---
+  // 🛡️ DAST Ethical Warning State
+  const [dastWarningAccepted, setDastWarningAccepted] = useState(() => {
+    return sessionStorage.getItem('dastWarningAccepted') === 'true';
+  });
+  const [dastWarningCountdown, setDastWarningCountdown] = useState(3);
+
+  useEffect(() => {
+    let timer;
+    if (activeTab === 'Penetration Test' && !dastWarningAccepted && dastWarningCountdown > 0) {
+      timer = setInterval(() => {
+        setDastWarningCountdown((prev) => prev - 1);
+      }, 1000);
+    }
+    return () => clearInterval(timer);
+  }, [activeTab, dastWarningAccepted, dastWarningCountdown]);
+
+  const handleAcceptDastWarning = () => {
+    setDastWarningAccepted(true);
+    sessionStorage.setItem('dastWarningAccepted', 'true');
+  };
+
+  // 🗄️ Database Security State
+  const [dbConfig, setDbConfig] = useState({
+    db_type: 'mysql',
+    host: 'localhost',
+    port: '3306',
+    user: 'root',
+    password: ''
+  });
+  const [dbBetaMessage, setDbBetaMessage] = useState(null);
+  const [dbFindings, setDbFindings] = useState(() => JSON.parse(localStorage.getItem('dbFindings')) || []);
+  useEffect(() => { localStorage.setItem('dbFindings', JSON.stringify(dbFindings)); }, [dbFindings]);
+
+  // --- 🧠 AI STATE ---
   const [aiModalTab, setAiModalTab] = useState('chat');
   const [chatHistories, setChatHistories] = useState(() => JSON.parse(localStorage.getItem('chatHistories')) || {});
   const [pocData, setPocData] = useState(() => JSON.parse(localStorage.getItem('pocData')) || {});
@@ -115,9 +148,6 @@ function App() {
   const [notifications, setNotifications] = useState([]);
   const [toasts, setToasts] = useState([]);
   const [isNotifOpen, setIsNotifOpen] = useState(false);
-
-  // --- GRC STATE ---
-  const [currency, setCurrency] = useState('INR'); // Defaults to Rupees
 
   // --- THREAT TRIAGE ENGINE STATE ---
   const [isRuleEngineOpen, setIsRuleEngineOpen] = useState(false);
@@ -183,7 +213,6 @@ function App() {
     recursiveCrawl: false,
     customHeaders: ''
   });
-  const [dockerImage, setDockerImage] = useState('python:3.9-slim');
 
   useEffect(() => { localStorage.setItem('githubFindings', JSON.stringify(githubFindings)); }, [githubFindings]);
   useEffect(() => { localStorage.setItem('webFindings', JSON.stringify(webFindings)); }, [webFindings]);
@@ -264,21 +293,24 @@ function App() {
   const processedGithub = applyRulesToFindings(githubFindings);
   const processedWeb = applyRulesToFindings(webFindings);
   const processedContainer = applyRulesToFindings(containerFindings);
+  const processedDb = applyRulesToFindings(dbFindings); // ✨ NEW
 
   const getActiveFindings = (findingsList) => findingsList.filter(f => !ignoredIds.includes(f.Issue) && (severityFilter.length === 0 || severityFilter.includes(f.Severity)));
   
   const activeGithub = getActiveFindings(processedGithub);
   const activeWeb = getActiveFindings(processedWeb);
   const activeContainer = getActiveFindings(processedContainer);
-  const totalIssues = activeGithub.length + activeWeb.length + activeContainer.length;
-  const allActiveFindings = [...activeGithub, ...activeWeb, ...activeContainer];
+  const activeDb = getActiveFindings(processedDb); // ✨ NEW
+
+  // ✨ NEW: Added activeDb to the global counts and arrays!
+  const totalIssues = activeGithub.length + activeWeb.length + activeContainer.length + activeDb.length;
+  const allActiveFindings = [...activeGithub, ...activeWeb, ...activeContainer, ...activeDb];
 
   // ==========================================
   // ⚖️ GRC COMPLIANCE ENGINE
   // ==========================================
   const calculateComplianceHealth = (findings) => {
     let scores = { 'SOC 2 (Trust)': 100, 'ISO 27001': 100, 'HIPAA (Privacy)': 100, 'OWASP Top 10': 100, 'PCI-DSS (Payments)': 100 };
-    
     let criticalBlockers = 0;
 
     findings.forEach(f => {
@@ -287,7 +319,6 @@ function App() {
 
       const issueStr = (f.Issue + " " + f.Type).toLowerCase();
 
-      // Matrix Mapping
       if (issueStr.includes('secret') || issueStr.includes('token') || issueStr.includes('key')) {
         scores['SOC 2 (Trust)'] -= deduction;
         scores['HIPAA (Privacy)'] -= (deduction * 1.5);
@@ -323,13 +354,12 @@ function App() {
 
   const { radarData, averageScore, criticalBlockers } = calculateComplianceHealth(allActiveFindings);
 
-  // --- ENGINEERING DEBT CALCULATION ---
   const calculateEngineeringDebt = (findings) => {
     return findings.reduce((total, f) => {
       if (f.Severity === 'Critical') return total + 8;
       if (f.Severity === 'High') return total + 4;
       if (f.Severity === 'Medium') return total + 2;
-      return total + 1; // Low severity
+      return total + 1;
     }, 0);
   };
   const totalEngineeringHours = calculateEngineeringDebt(allActiveFindings);
@@ -351,6 +381,7 @@ function App() {
   const githubChartData = getSeverityData(activeGithub);
   const webChartData = getSeverityData(activeWeb);
   const containerChartData = getSeverityData(activeContainer);
+  const dbChartData = getSeverityData(activeDb);
 
   const handleResetEngine = () => {
     setGithubFindings([]); setWebFindings([]); setContainerFindings([]); setIgnoredIds([]);
@@ -387,6 +418,7 @@ function App() {
     if (type === 'sast') { data = activeGithub; title = "SAST_Code_Report"; }
     if (type === 'dast') { data = activeWeb; title = "DAST_Web_Report"; }
     if (type === 'container') { data = activeContainer; title = "Container_Security_Report"; }
+    if (type === 'db') { data = activeDb; title = "Database_Security_Report"; }
 
     if (data.length === 0) { notify('error', `Cannot export. No findings available for ${title.replace(/_/g, ' ')}.`); return; }
 
@@ -453,7 +485,7 @@ function App() {
 
   const runScan = async (type, endpoint, payload) => {
     if (scanState.isActive) return; 
-    setLoading(true); setCurrentPage(1); 
+    setCurrentPage(1); 
     notify('info', `Initializing ${type.toUpperCase()} deep scan...`);
     
     const estTime = type === 'web' ? 45 : 25; 
@@ -479,17 +511,50 @@ function App() {
       
       setTimeout(() => {
         setScanState({ isActive: false, type: null, progress: 0, elapsed: 0, estimatedTotal: 0, phase: '' });
-        setLoading(false);
         if (type === 'github') setGithubFindings(response.data.findings);
         if (type === 'web') setWebFindings(response.data.findings);
-        if (type === 'container') setContainerFindings(response.data.findings);
+        if (type === 'container' || type === 'dockerfile') setContainerFindings(response.data.findings);
         notify('success', `${type.toUpperCase()} scan completed. Found ${response.data.findings.length} issues.`);
       }, 800);
     } catch (error) {
       clearInterval(scanTimerRef.current);
       setScanState({ isActive: false, type: null, progress: 0, elapsed: 0, estimatedTotal: 0, phase: '' });
-      setLoading(false);
       notify('error', `Scan failed: ${error.message}`);
+    }
+  };
+
+  const executeDatabaseScan = async () => {
+    setScanState({ isActive: true, progress: 0 });
+    setDbBetaMessage(null);
+    setDbFindings([]);
+
+    const progressInterval = setInterval(() => {
+      setScanState(prev => ({ ...prev, progress: Math.min(prev.progress + 15, 90) }));
+    }, 500);
+
+    try {
+      const response = await fetch('http://localhost:5000/api/scan/database', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(dbConfig)
+      });
+      
+      const data = await response.json();
+      
+      if (data.status === 'beta') {
+        setDbBetaMessage(data.message);
+      } else if (data.findings) {
+        setDbFindings(data.findings);
+      } else if (data.error) {
+        alert(`Connection Error: ${data.error}`);
+      }
+    } catch (error) {
+      console.error("Database Engine Error:", error);
+      alert("Failed to reach the NexusSec Backend Engine.");
+    } finally {
+      clearInterval(progressInterval);
+      setScanState({ isActive: false, progress: 100 });
+      setTimeout(() => setScanState(prev => ({ ...prev, progress: 0 })), 2000);
     }
   };
 
@@ -824,13 +889,13 @@ function App() {
           {isSidebarOpen && <p className="text-[10px] font-semibold text-zinc-600 uppercase tracking-wider mb-3 ml-2">Overview</p>}
           {renderSidebarItem('Dashboard', LayoutGrid)}
           
-          {/* ✨ NEW GRC TAB ADDED HERE */}
           {renderSidebarItem('Compliance & GRC', Scale)}
           
           {isSidebarOpen && <p className="text-[10px] font-semibold text-zinc-600 uppercase tracking-wider mb-3 mt-8 ml-2">Scanners</p>}
           {renderSidebarItem('Source Audit', FileCode2)}
           {renderSidebarItem('Penetration Test', Globe)}
           {renderSidebarItem('Container Security', Box)}
+          {renderSidebarItem('Database Security', Database)}
         </nav>
 
         <div className="p-4 mt-auto">
@@ -917,23 +982,26 @@ function App() {
                             <button onClick={() => downloadReport('sast')} className="w-full px-4 py-2.5 text-sm text-zinc-300 hover:bg-indigo-500/20 hover:text-indigo-300 text-left flex items-center gap-3 transition-colors"><Code2 size={14}/> SAST Code Report</button>
                             <button onClick={() => downloadReport('dast')} className="w-full px-4 py-2.5 text-sm text-zinc-300 hover:bg-indigo-500/20 hover:text-indigo-300 text-left flex items-center gap-3 transition-colors"><Globe size={14}/> DAST Web Report</button>
                             <button onClick={() => downloadReport('container')} className="w-full px-4 py-2.5 text-sm text-zinc-300 hover:bg-indigo-500/20 hover:text-indigo-300 text-left flex items-center gap-3 transition-colors"><Server size={14}/> Container Report</button>
+                            <button onClick={() => downloadReport('db')} className="w-full px-4 py-2.5 text-sm text-zinc-300 hover:bg-indigo-500/20 hover:text-indigo-300 text-left flex items-center gap-3 transition-colors"><Database size={14}/> Database Report</button>
                           </motion.div>
                         )}
                       </AnimatePresence>
                     </div>
                   </div>
                   
-                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6 relative z-20">
+                  <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-6 relative z-20">
                     <div className="bg-gradient-to-br from-rose-500/10 to-zinc-900/60 backdrop-blur-md border border-rose-500/20 p-5 rounded-xl"><div className="flex items-center justify-between mb-4"><p className="text-xs font-semibold text-rose-500/70 uppercase">Total Threats</p><AlertTriangle size={16} className="text-rose-500/50"/></div><p className="text-3xl font-bold text-rose-100">{totalIssues}</p></div>
                     <div className="bg-gradient-to-br from-indigo-500/10 to-zinc-900/60 backdrop-blur-md border border-indigo-500/20 p-5 rounded-xl"><div className="flex items-center justify-between mb-4"><p className="text-xs font-semibold text-indigo-500/70 uppercase">Codebase</p><Code2 size={16} className="text-indigo-500/50"/></div><p className="text-3xl font-bold text-indigo-100">{activeGithub.length}</p></div>
                     <div className="bg-gradient-to-br from-violet-500/10 to-zinc-900/60 backdrop-blur-md border border-violet-500/20 p-5 rounded-xl"><div className="flex items-center justify-between mb-4"><p className="text-xs font-semibold text-violet-500/70 uppercase">Runtime Web</p><Globe size={16} className="text-violet-500/50"/></div><p className="text-3xl font-bold text-violet-100">{activeWeb.length}</p></div>
                     <div className="bg-gradient-to-br from-cyan-500/10 to-zinc-900/60 backdrop-blur-md border border-cyan-500/20 p-5 rounded-xl"><div className="flex items-center justify-between mb-4"><p className="text-xs font-semibold text-cyan-500/70 uppercase">Containers</p><Server size={16} className="text-cyan-500/50"/></div><p className="text-3xl font-bold text-cyan-100">{activeContainer.length}</p></div>
+                    <div className="bg-gradient-to-br from-emerald-500/10 to-zinc-900/60 backdrop-blur-md border border-emerald-500/20 p-5 rounded-xl"><div className="flex items-center justify-between mb-4"><p className="text-xs font-semibold text-emerald-500/70 uppercase">Databases</p><Database size={16} className="text-emerald-500/50"/></div><p className="text-3xl font-bold text-emerald-100">{activeDb.length}</p></div>
                   </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                     {renderChart('SAST Code Distribution', <Code2 className="text-indigo-400" size={16}/>, githubChartData)}
                     {renderChart('DAST Web Vulnerabilities', <Globe className="text-violet-400" size={16}/>, webChartData)}
                     {renderChart('Container CVEs', <Server className="text-cyan-400" size={16}/>, containerChartData)}
+                    {renderChart('Infrastructure Configs', <Database className="text-emerald-400" size={16}/>, dbChartData)}
                   </div>
                 </motion.div>
               )}
@@ -949,41 +1017,73 @@ function App() {
                   </div>
 
                   {/* Top KPI Cards */}
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6 relative z-20">
-                    <div className="bg-zinc-900/60 backdrop-blur-md border border-zinc-800 p-5 rounded-xl flex items-center justify-between">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6 relative z-[100]">
+                    
+                    {/* CARD 1: GLOBAL HEALTH SCORE */}
+                    <div className="bg-zinc-900/60 backdrop-blur-md border border-zinc-800 p-5 rounded-xl flex items-center justify-between relative hover:z-[100] transition-all">
                       <div>
                         <p className="text-xs font-semibold text-zinc-500 uppercase tracking-widest mb-1">Global Health Score</p>
                         <p className={`text-3xl font-bold ${averageScore > 80 ? 'text-emerald-400' : averageScore > 50 ? 'text-amber-400' : 'text-rose-400'}`}>{averageScore}<span className="text-lg text-zinc-600">/100</span></p>
                       </div>
-                      <div className={`p-3 rounded-full ${averageScore > 80 ? 'bg-emerald-500/10 text-emerald-500' : averageScore > 50 ? 'bg-amber-500/10 text-amber-500' : 'bg-rose-500/10 text-rose-500'}`}>
+                      
+                      <div className={`relative group p-3 rounded-full cursor-help transition-colors ${averageScore > 80 ? 'bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20' : averageScore > 50 ? 'bg-amber-500/10 text-amber-500 hover:bg-amber-500/20' : 'bg-rose-500/10 text-rose-500 hover:bg-rose-500/20'}`}>
                         <Scale size={24} />
+                        
+                        <div className="absolute top-full left-1/2 -translate-x-1/2 mt-3 w-64 p-3 bg-zinc-950 border border-zinc-700 rounded-lg shadow-2xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-[999]">
+                          <h4 className="text-xs font-bold text-zinc-200 mb-1 border-b border-zinc-800 pb-1">Calculation Metrics</h4>
+                          <p className="text-[10px] text-zinc-400 mb-2 leading-relaxed">Score begins at 100 per framework. Points are deducted based on active threat severity mapped to specific compliance controls:</p>
+                          <div className="text-[10px] font-mono text-zinc-500 flex flex-col gap-0.5">
+                            <span className="flex justify-between"><span>Critical:</span> <span className="text-rose-400">-20 pts</span></span>
+                            <span className="flex justify-between"><span>High:</span> <span className="text-orange-400">-12 pts</span></span>
+                            <span className="flex justify-between"><span>Medium:</span> <span className="text-amber-400">-5 pts</span></span>
+                            <span className="flex justify-between"><span>Low:</span> <span className="text-blue-400">-1 pt</span></span>
+                          </div>
+                          <div className="absolute bottom-full left-1/2 -translate-x-1/2 -mb-px border-4 border-transparent border-b-zinc-700" />
+                        </div>
                       </div>
                     </div>
 
-                    <div className="bg-zinc-900/60 backdrop-blur-md border border-zinc-800 p-5 rounded-xl flex items-center justify-between">
+                    {/* CARD 2: STATIC AUDIT BLOCKERS */}
+                    <div className="bg-zinc-900/60 backdrop-blur-md border border-zinc-800 p-5 rounded-xl flex items-center justify-between relative hover:z-[100] transition-all">
                       <div>
                         <p className="text-xs font-semibold text-zinc-500 uppercase tracking-widest mb-1">Audit Blockers</p>
-                        <p className="text-3xl font-bold text-white">{criticalBlockers} <span className="text-sm font-medium text-rose-500 bg-rose-500/10 px-2 py-0.5 rounded uppercase tracking-wider">Critical</span></p>
+                        <p className="text-3xl font-bold text-white flex items-center gap-3">
+                          {criticalBlockers} 
+                          <span className="text-sm font-medium text-rose-500 bg-rose-500/10 px-2 py-0.5 rounded uppercase tracking-wider border border-rose-500/20">Critical</span>
+                        </p>
                       </div>
-                      <div className="p-3 rounded-full bg-indigo-500/10 text-indigo-400">
-                        <ShieldCheck size={24} />
+                      <div className="p-4 rounded-full bg-indigo-500/10 text-indigo-400 shadow-inner">
+                        <ShieldCheck size={28} />
                       </div>
                     </div>
 
-                    {/* ✨ REPLACED: Engineering Hours (AI ROI Metric) */}
-                    <div className="bg-zinc-900/60 backdrop-blur-md border border-zinc-800 p-5 rounded-xl flex items-center justify-between">
+                    {/* CARD 3: MANUAL REMEDIATION TIME */}
+                    <div className="bg-zinc-900/60 backdrop-blur-md border border-zinc-800 p-5 rounded-xl flex items-center justify-between relative group hover:z-[100] transition-all">
                       <div>
                         <div className="flex items-center gap-2 mb-1">
                           <p className="text-xs font-semibold text-zinc-500 uppercase tracking-widest">Manual Remediation Time</p>
+                          <Info size={14} className="text-zinc-500 cursor-help hover:text-indigo-400 transition-colors" />
                         </div>
+                        
                         <p className="text-3xl font-bold text-indigo-100">
                           {totalEngineeringHours} <span className="text-lg text-zinc-500 font-medium">hrs</span>
                         </p>
                       </div>
+                      
                       <div className="p-3 rounded-full bg-indigo-500/10 text-indigo-400">
                         <Clock size={24} />
                       </div>
+
+                      <div className="absolute top-full left-1/2 -translate-x-1/2 mt-3 w-72 p-4 bg-zinc-950 border border-indigo-500/30 rounded-lg shadow-2xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-[999]">
+                        <h4 className="text-xs font-bold text-indigo-400 mb-2 flex items-center gap-1.5"><Sparkles size={12}/> Optimization & Best Practices</h4>
+                        <ul className="text-[10px] text-zinc-400 space-y-1.5 list-disc pl-3 leading-relaxed">
+                          <li><strong className="text-zinc-300">Neural Auto-Fix:</strong> Utilize NexusSec AI to generate remediation code, reducing engineering hours by ~95%.</li>
+                          <li><strong className="text-zinc-300">CI/CD Patching:</strong> Automate minor OS/Container package updates via dependabot or Trivy hooks.</li>
+                        </ul>
+                        <div className="absolute bottom-full left-1/2 -translate-x-1/2 -mb-px border-4 border-transparent border-b-indigo-500/30" />
+                      </div>
                     </div>
+
                   </div>
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6 relative z-20">
@@ -1009,7 +1109,7 @@ function App() {
                       </p>
                     </div>
 
-                    {/* ✨ UPDATED: Dynamic Threat / Business Translation List */}
+                    {/* Dynamic Threat / Business Translation List */}
                     <div className="bg-zinc-900/60 backdrop-blur-md border border-zinc-800 rounded-xl p-6 flex flex-col h-[420px]">
                       <h3 className="text-sm font-semibold text-zinc-300 mb-4 flex items-center gap-2">
                         <AlertTriangle size={16} className="text-rose-400" /> Key Executive Risks
@@ -1023,14 +1123,13 @@ function App() {
                           allActiveFindings.slice(0, 8).map((finding, idx) => {
                             const issueLower = (finding.Issue + " " + finding.Type).toLowerCase();
                             
-                            // 1. Dynamic Framework Assignment
+                            // 1. Framework Logic
                             let framework = "OWASP Top 10";
                             let frameworkColor = "text-blue-400 bg-blue-500/10 border-blue-500/20";
-                            
                             if (issueLower.includes('secret') || issueLower.includes('token') || issueLower.includes('api')) {
                               framework = "SOC 2 (CC6.1)";
                               frameworkColor = "text-emerald-400 bg-emerald-500/10 border-emerald-500/20";
-                            } else if (issueLower.includes('config') || issueLower.includes('cve') || issueLower.includes('debug')) {
+                            } else if (issueLower.includes('config') || issueLower.includes('cve') || issueLower.includes('debug') || issueLower.includes('root')) {
                               framework = "ISO 27001 (A.12)";
                               frameworkColor = "text-fuchsia-400 bg-fuchsia-500/10 border-fuchsia-500/20";
                             } else if (issueLower.includes('crypto') || issueLower.includes('hash')) {
@@ -1038,7 +1137,25 @@ function App() {
                               frameworkColor = "text-amber-400 bg-amber-500/10 border-amber-500/20";
                             }
 
-                            // 2. Dynamic Description Generator
+                            // 2. Business Impact Translation Logic
+                            let businessImpact = "General Security & Compliance Risk";
+                            if (issueLower.includes('secret') || issueLower.includes('token') || issueLower.includes('api')) {
+                              businessImpact = "Severe Credential & Infrastructure Compromise";
+                            } else if (issueLower.includes('injection') || issueLower.includes('sql')) {
+                              businessImpact = "Customer Database Breach & Data Exfiltration";
+                            } else if (issueLower.includes('xss')) {
+                              businessImpact = "Client-Side Session Hijacking & Phishing";
+                            } else if (issueLower.includes('crypto') || issueLower.includes('hash')) {
+                              businessImpact = "Data-at-Rest Decryption Vulnerability";
+                            } else if (issueLower.includes('cve')) {
+                              businessImpact = "Unpatched Zero-Day Exploit Susceptibility";
+                            } else if (issueLower.includes('root') || issueLower.includes('privilege')) {
+                              businessImpact = "Complete Containerized Environment Takeover";
+                            } else if (issueLower.includes('access') || issueLower.includes('admin')) {
+                              businessImpact = "Unauthorized Administrative Access";
+                            }
+
+                            // 3. Risk Description Logic
                             let riskDesc = "";
                             if (issueLower.includes('secret') || issueLower.includes('token') || issueLower.includes('api')) {
                               riskDesc = "Unencrypted credentials detected. Violates confidentiality and secure asset management controls.";
@@ -1047,22 +1164,28 @@ function App() {
                             } else if (issueLower.includes('crypto') || issueLower.includes('hash')) {
                               riskDesc = "Weak cryptographic protocols detected. Violates data-at-rest encryption requirements.";
                             } else {
-                              // If it doesn't match the above, use the specific FIX provided by the LLM as the description
                               riskDesc = finding.Fix ? `Remediation required to pass audit: ${finding.Fix}` : "Fails baseline security and patch management compliance controls.";
                             }
 
                             return (
-                              <div key={idx} className="p-3 bg-zinc-950/50 border border-zinc-800 rounded-lg flex flex-col gap-2">
-                                <div className="flex justify-between items-start">
-                                  <span className={`px-2 py-0.5 text-[10px] font-bold uppercase rounded border ${frameworkColor}`}>
+                              <div key={idx} className="p-4 bg-zinc-950/80 border border-zinc-800 rounded-xl flex flex-col gap-2 hover:border-zinc-700 transition-colors shadow-sm">
+                                <div className="flex justify-between items-start mb-1">
+                                  <span className={`px-2 py-0.5 text-[10px] font-black uppercase tracking-widest rounded border ${frameworkColor}`}>
                                     Violates: {framework}
                                   </span>
-                                  <span className={`text-[10px] font-bold uppercase ${finding.Severity === 'Critical' ? 'text-rose-500' : finding.Severity === 'High' ? 'text-orange-500' : 'text-zinc-500'}`}>
+                                  <span className={`text-[10px] font-black tracking-widest uppercase ${finding.Severity === 'Critical' ? 'text-rose-500' : finding.Severity === 'High' ? 'text-orange-500' : 'text-zinc-500'}`}>
                                     {finding.Severity}
                                   </span>
                                 </div>
-                                <p className="text-sm text-zinc-200 font-medium truncate" title={finding.Issue}>{finding.Issue}</p>
-                                <p className="text-xs text-zinc-500 line-clamp-2">
+                                
+                                <p className="text-sm text-zinc-100 font-bold tracking-tight">{businessImpact}</p>
+                                
+                                <div className="flex items-center gap-2">
+                                  <Code2 size={12} className="text-zinc-600" />
+                                  <p className="text-[10px] text-zinc-500 font-mono truncate" title={finding.Issue}>{finding.Issue}</p>
+                                </div>
+                                
+                                <p className="text-xs text-zinc-400 line-clamp-2 mt-2 leading-relaxed bg-zinc-900/50 p-2 rounded border border-zinc-800/50">
                                   {riskDesc}
                                 </p>
                               </div>
@@ -1112,223 +1235,451 @@ function App() {
 
               {/* PENETRATION TEST PAGE */}
               {activeTab === 'Penetration Test' && (
-                <motion.div key="web" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}>
-                  <div className="mb-6 relative z-20 flex flex-col md:flex-row md:items-end justify-between gap-4">
-                    <div>
-                      <h2 className="text-2xl font-bold text-white tracking-tight">Dynamic Application Security Testing</h2>
-                      <p className="text-sm text-zinc-500 mt-1">Execute live reconnaissance and exploit simulation on active targets.</p>
-                    </div>
-                  </div>
-
-                  {/* 🎛️ THE LIQUID TAB SWITCHER */}
-                  <div className="flex gap-2 p-1.5 bg-[#09090b] border border-zinc-800 rounded-lg w-max mb-6 relative z-20 shadow-inner">
-                    {['time-limited', 'full'].map((mode) => (
-                      <button
-                        key={mode}
-                        onClick={() => setDastMode(mode)}
-                        className={`relative px-6 py-2 text-sm font-semibold rounded-md transition-colors z-10 ${dastMode === mode ? (mode === 'time-limited' ? 'text-cyan-400' : 'text-rose-400') : 'text-zinc-500 hover:text-zinc-300'}`}
+                <motion.div key="web" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="relative">
+                  
+                  {/* ✨ THE ETHICAL USE LOCK SCREEN MODAL */}
+                  <AnimatePresence>
+                    {!dastWarningAccepted && (
+                      <motion.div 
+                        initial={{ opacity: 0, scale: 0.95 }} 
+                        animate={{ opacity: 1, scale: 1 }} 
+                        exit={{ opacity: 0, scale: 0.95, filter: "blur(10px)" }} 
+                        className="absolute inset-0 z-[9999] flex items-center justify-center p-4"
                       >
-                        {dastMode === mode && (
-                          <motion.div
-                            layoutId="dastModeActive"
-                            className={`absolute inset-0 rounded-md -z-10 ${mode === 'time-limited' ? 'bg-cyan-500/10 border border-cyan-500/30' : 'bg-rose-500/10 border border-rose-500/30'}`}
-                            transition={{ type: "spring", stiffness: 400, damping: 30 }}
-                          />
-                        )}
-                        {mode === 'time-limited' ? 'Time-Boxed Scan' : 'Full Exhaustive DAST'}
-                      </button>
-                    ))}
-                  </div>
+                        <div className="bg-zinc-900/95 backdrop-blur-xl border border-rose-500/50 p-8 rounded-2xl max-w-lg w-full shadow-2xl shadow-rose-900/20 text-center relative overflow-hidden">
+                          <div className="absolute inset-0 opacity-5 bg-[repeating-linear-gradient(45deg,transparent,transparent_10px,#f43f5e_10px,#f43f5e_20px)] pointer-events-none" />
+                          
+                          <div className="bg-rose-500/10 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-6 relative z-10 border border-rose-500/20">
+                            <AlertTriangle size={32} className="text-rose-500" />
+                          </div>
+                          
+                          <h2 className="text-2xl font-bold text-white mb-4 uppercase tracking-wide relative z-10">Caution: Live Payloads</h2>
+                          
+                          <p className="text-sm text-zinc-400 mb-6 leading-relaxed relative z-10">
+                            NexusSec contains active Dynamic Application Security Testing (DAST) engines. By proceeding, you confirm that you have <strong className="text-rose-400">explicit, written authorization</strong> to run vulnerability scans against the target environment.
+                          </p>
+                          
+                          <div className="bg-zinc-950/80 p-4 rounded-lg border border-zinc-800/80 mb-8 text-left relative z-10">
+                            <ul className="text-[11px] text-zinc-500 space-y-2 list-disc pl-4 font-mono uppercase tracking-wider">
+                              <li>Unauthorized scanning is illegal.</li>
+                              <li>Payloads may alter target data.</li>
+                              <li>The developer assumes zero liability.</li>
+                            </ul>
+                          </div>
 
-                  <div className="bg-zinc-900/60 backdrop-blur-md border border-zinc-800 rounded-xl p-6 relative z-20 overflow-hidden shadow-lg">
+                          <button
+                            onClick={handleAcceptDastWarning}
+                            disabled={dastWarningCountdown > 0}
+                            className={`w-full py-4 rounded-xl font-bold uppercase tracking-widest transition-all duration-300 relative z-10 ${
+                              dastWarningCountdown > 0 
+                                ? 'bg-zinc-800 text-zinc-500 cursor-not-allowed border border-zinc-700' 
+                                : 'bg-rose-600 text-white hover:bg-rose-500 shadow-[0_0_20px_rgba(225,29,72,0.4)] border border-rose-500'
+                            }`}
+                          >
+                            {dastWarningCountdown > 0 
+                              ? `Please Read (${dastWarningCountdown}s)` 
+                              : 'I Understand & Agree'
+                            }
+                          </button>
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+
+                  {/* 🔒 WRAPPER */}
+                  <div className={`transition-all duration-700 ${!dastWarningAccepted ? 'opacity-20 blur-md pointer-events-none select-none' : ''}`}>
                     
-                    <div className="relative mb-8">
-                      <Globe className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500" size={18}/>
-                      <input 
-                        type="text" 
-                        value={targetUrl} 
-                        onChange={(e) => setTargetUrl(e.target.value)} 
-                        className="w-full h-full bg-[#050505] border border-zinc-800 rounded-lg py-4 pl-12 pr-4 text-sm text-zinc-200 outline-none transition-all focus:border-indigo-500/50 shadow-inner" 
-                        placeholder="https://target-application.com" 
-                      />
+                    <div className="mb-6 relative z-20 flex flex-col md:flex-row md:items-end justify-between gap-4">
+                      <div>
+                        <h2 className="text-2xl font-bold text-white tracking-tight">Dynamic Application Security Testing</h2>
+                        <p className="text-sm text-zinc-500 mt-1">Execute live reconnaissance and exploit simulation on active targets.</p>
+                      </div>
                     </div>
 
-                    <AnimatePresence mode="wait">
-                      {dastMode === 'time-limited' ? (
-                        <motion.div key="time-limited" initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }} transition={{ duration: 0.2 }} className="flex flex-col gap-6">
-                          <div className="bg-[#09090b] border border-zinc-800/80 rounded-lg p-5">
-                            <div className="flex items-center gap-2 mb-6">
-                              <Clock size={16} className={dastTimeLimit === 5 ? 'text-cyan-400 transition-colors duration-500' : dastTimeLimit === 15 ? 'text-violet-400 transition-colors duration-500' : 'text-rose-400 transition-colors duration-500'}/>
-                              <h4 className="text-sm font-bold text-zinc-200">Execution Time Limit</h4>
-                            </div>
-                            
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                              {[
-                                { time: 5, title: 'Surface Recon', desc: 'Fast checks for obvious misconfigurations. Ideal for rapid CI/CD pipeline feedback.', colorCode: '#22d3ee' },
-                                { time: 15, title: 'Standard Audit', desc: 'Balanced endpoint spidering and vulnerability fuzzing. Best for daily security sanity checks.', colorCode: '#a78bfa' },
-                                { time: 30, title: 'Deep Assessment', desc: 'Heavy payload injection & exhaustive parameter testing. Best for pre-production staging.', colorCode: '#fb7185' }
-                              ].map((option) => {
-                                const isActive = dastTimeLimit === option.time;
+                    <div className="flex gap-2 p-1.5 bg-[#09090b] border border-zinc-800 rounded-lg w-max mb-6 relative z-20 shadow-inner">
+                      {['time-limited', 'full'].map((mode) => (
+                        <button
+                          key={mode}
+                          onClick={() => setDastMode(mode)}
+                          className={`relative px-6 py-2 text-sm font-semibold rounded-md transition-colors z-10 ${dastMode === mode ? (mode === 'time-limited' ? 'text-cyan-400' : 'text-rose-400') : 'text-zinc-500 hover:text-zinc-300'}`}
+                        >
+                          {dastMode === mode && (
+                            <motion.div
+                              layoutId="dastModeActive"
+                              className={`absolute inset-0 rounded-md -z-10 ${mode === 'time-limited' ? 'bg-cyan-500/10 border border-cyan-500/30' : 'bg-rose-500/10 border border-rose-500/30'}`}
+                              transition={{ type: "spring", stiffness: 400, damping: 30 }}
+                            />
+                          )}
+                          {mode === 'time-limited' ? 'Time-Boxed Scan' : 'Full Exhaustive DAST'}
+                        </button>
+                      ))}
+                    </div>
 
-                                return (
-                                  <button 
-                                    key={option.time} 
-                                    onClick={() => setDastTimeLimit(option.time)} 
-                                    className="relative flex flex-col items-start p-5 rounded-xl text-left transition-all duration-500 group outline-none"
-                                  >
-                                    {isActive && (
-                                      <motion.div 
-                                        layoutId="activeBorderCrawling"
-                                        className="absolute inset-0 rounded-xl z-10 pointer-events-none"
-                                        initial={false}
-                                        animate={{ borderColor: option.colorCode, boxShadow: `0 0 20px ${option.colorCode}33` }}
-                                        transition={{ type: "spring", stiffness: 300, damping: 30, borderColor: { duration: 0.5 } }}
-                                        style={{ borderWidth: '2px', borderStyle: 'solid' }}
-                                      />
-                                    )}
+                    <div className="bg-zinc-900/60 backdrop-blur-md border border-zinc-800 rounded-xl p-6 relative z-20 overflow-hidden shadow-lg">
+                      
+                      <div className="relative mb-8">
+                        <Globe className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500" size={18}/>
+                        <input 
+                          type="text" 
+                          value={targetUrl} 
+                          onChange={(e) => setTargetUrl(e.target.value)} 
+                          className="w-full h-full bg-[#050505] border border-zinc-800 rounded-lg py-4 pl-12 pr-4 text-sm text-zinc-200 outline-none transition-all focus:border-indigo-500/50 shadow-inner" 
+                          placeholder="https://target-application.com" 
+                        />
+                      </div>
 
-                                    <div className="mb-2 flex items-center justify-between w-full relative z-20">
-                                      <span className={`text-3xl font-black transition-colors duration-500 ${isActive ? (option.time === 5 ? 'text-cyan-400' : option.time === 15 ? 'text-violet-400' : 'text-rose-400') : 'text-zinc-600'}`}>
-                                        {option.time}
-                                        <span className="text-xs font-semibold ml-1 opacity-70">MIN</span>
-                                      </span>
+                      <AnimatePresence mode="wait">
+                        {dastMode === 'time-limited' ? (
+                          <motion.div key="time-limited" initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }} transition={{ duration: 0.2 }} className="flex flex-col gap-6">
+                            <div className="bg-[#09090b] border border-zinc-800/80 rounded-lg p-5">
+                              <div className="flex items-center gap-2 mb-6">
+                                <Clock size={16} className={dastTimeLimit === 5 ? 'text-cyan-400 transition-colors duration-500' : dastTimeLimit === 15 ? 'text-violet-400 transition-colors duration-500' : 'text-rose-400 transition-colors duration-500'}/>
+                                <h4 className="text-sm font-bold text-zinc-200">Execution Time Limit</h4>
+                              </div>
+                              
+                              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                                {[
+                                  { time: 5, title: 'Surface Recon', desc: 'Fast checks for obvious misconfigurations. Ideal for rapid CI/CD pipeline feedback.', colorCode: '#22d3ee' },
+                                  { time: 15, title: 'Standard Audit', desc: 'Balanced endpoint spidering and vulnerability fuzzing. Best for daily security sanity checks.', colorCode: '#a78bfa' },
+                                  { time: 30, title: 'Deep Assessment', desc: 'Heavy payload injection & exhaustive parameter testing. Best for pre-production staging.', colorCode: '#fb7185' }
+                                ].map((option) => {
+                                  const isActive = dastTimeLimit === option.time;
+
+                                  return (
+                                    <button 
+                                      key={option.time} 
+                                      onClick={() => setDastTimeLimit(option.time)} 
+                                      className="relative flex flex-col items-start p-5 rounded-xl text-left transition-all duration-500 group outline-none"
+                                    >
                                       {isActive && (
-                                        <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} className="flex-shrink-0">
-                                          <Activity size={16} className={option.time === 5 ? 'text-cyan-400' : option.time === 15 ? 'text-violet-400' : 'text-rose-400'} />
-                                        </motion.div>
+                                        <motion.div 
+                                          layoutId="activeBorderCrawling"
+                                          className="absolute inset-0 rounded-xl z-10 pointer-events-none"
+                                          initial={false}
+                                          animate={{ borderColor: option.colorCode, boxShadow: `0 0 20px ${option.colorCode}33` }}
+                                          transition={{ type: "spring", stiffness: 300, damping: 30, borderColor: { duration: 0.5 } }}
+                                          style={{ borderWidth: '2px', borderStyle: 'solid' }}
+                                        />
                                       )}
-                                    </div>
 
-                                    <h5 className={`text-xs font-bold uppercase tracking-wider mb-1 relative z-20 transition-colors duration-500 ${isActive ? 'text-zinc-100' : 'text-zinc-500'}`}>{option.title}</h5>
-                                    <p className={`text-[10px] leading-relaxed relative z-20 transition-colors duration-500 ${isActive ? 'text-zinc-400' : 'text-zinc-700'}`}>{option.desc}</p>
-                                    <div className={`absolute inset-0 rounded-xl -z-10 transition-opacity duration-500 ${isActive ? 'opacity-100' : 'opacity-0'} ${option.time === 5 ? 'bg-cyan-500/5' : option.time === 15 ? 'bg-violet-500/5' : 'bg-rose-500/5'}`} />
-                                  </button>
-                                );
-                              })}
-                            </div>
-                          </div>
-
-                          <button 
-                            onClick={() => runScan('web', 'web', { target: targetUrl, timeLimit: dastTimeLimit, type: 'recon' })} 
-                            disabled={scanState.isActive} 
-                            className={`w-full inline-flex items-center justify-center gap-2 text-white px-4 py-4 rounded-lg text-sm font-black transition-all duration-700 disabled:opacity-50 shadow-lg relative overflow-hidden
-                              ${dastTimeLimit === 5 ? 'bg-cyan-600 hover:bg-cyan-500 shadow-cyan-900/20' : 
-                                dastTimeLimit === 15 ? 'bg-violet-600 hover:bg-violet-500 shadow-violet-900/20' : 
-                                'bg-rose-600 hover:bg-rose-500 shadow-rose-900/20'}`}
-                          >
-                            <Zap size={18} className={scanState.isActive ? 'animate-spin' : 'animate-pulse'} /> 
-                            INITIATE {dastTimeLimit}-MINUTE SCAN
-                          </button>
-                        </motion.div>
-
-                      ) : (
-
-                        <motion.div key="full" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} transition={{ duration: 0.2 }} className="flex flex-col gap-6">
-                          <div className="bg-rose-500/5 border border-rose-500/20 rounded-lg p-5">
-                            <div className="flex items-start gap-3">
-                              <AlertTriangle size={20} className="text-rose-500 flex-shrink-0 mt-0.5"/>
-                              <div>
-                                <h4 className="text-sm font-bold text-rose-400">Deep Attack Vector Warning</h4>
-                                <p className="text-xs text-zinc-400 mt-1.5 leading-relaxed">
-                                  This scan will execute highly aggressive payloads, including SQL injection, XSS, and CSRF simulations. It is extremely noisy and will continue running until all endpoint permutations are exhausted. Do not run on production databases during peak hours.
-                                </p>
-                              </div>
-                            </div>
-                          </div>
-
-                          <div className="bg-[#09090b] border border-zinc-800 rounded-lg overflow-hidden transition-colors">
-                            <button 
-                              onClick={() => setShowDastConfig(!showDastConfig)}
-                              className="w-full flex items-center justify-between p-4 text-xs font-bold uppercase tracking-widest text-zinc-400 hover:text-white transition-colors hover:bg-zinc-900/50"
-                            >
-                              <div className="flex items-center gap-2">
-                                <Box size={14} className={showDastConfig ? 'text-indigo-400' : ''} />
-                                Engine Configurations
-                              </div>
-                              <ChevronRight size={14} className={`transition-transform duration-300 ${showDastConfig ? 'rotate-90' : ''}`} />
-                            </button>
-
-                            <AnimatePresence>
-                              {showDastConfig && (
-                                <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="border-t border-zinc-800 bg-black/50">
-                                  <div className="p-5 flex flex-col gap-5">
-                                    <div>
-                                      <div className="flex justify-between items-center mb-2">
-                                        <label className="text-[16px] text-zinc-500 font-bold uppercase tracking-widest">Concurrent Threads</label>
-                                        <span className="text-xs font-black text-indigo-400">{dastConfig.concurrency}</span>
+                                      <div className="mb-2 flex items-center justify-between w-full relative z-20">
+                                        <span className={`text-3xl font-black transition-colors duration-500 ${isActive ? (option.time === 5 ? 'text-cyan-400' : option.time === 15 ? 'text-violet-400' : 'text-rose-400') : 'text-zinc-600'}`}>
+                                          {option.time}
+                                          <span className="text-xs font-semibold ml-1 opacity-70">MIN</span>
+                                        </span>
+                                        {isActive && (
+                                          <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} className="flex-shrink-0">
+                                            <Activity size={16} className={option.time === 5 ? 'text-cyan-400' : option.time === 15 ? 'text-violet-400' : 'text-rose-400'} />
+                                          </motion.div>
+                                        )}
                                       </div>
-                                      <input 
-                                        type="range" min="1" max="50" 
-                                        value={dastConfig.concurrency}
-                                        onChange={(e) => setDastConfig({...dastConfig, concurrency: parseInt(e.target.value)})}
-                                        className="w-full accent-indigo-500"
-                                      />
-                                      <p className="text-[10px] text-zinc-600 uppercase mt-1">Higher values increase speed but risk Denial of Service.</p>
+
+                                      <h5 className={`text-xs font-bold uppercase tracking-wider mb-1 relative z-20 transition-colors duration-500 ${isActive ? 'text-zinc-100' : 'text-zinc-500'}`}>{option.title}</h5>
+                                      <p className={`text-[10px] leading-relaxed relative z-20 transition-colors duration-500 ${isActive ? 'text-zinc-400' : 'text-zinc-700'}`}>{option.desc}</p>
+                                      <div className={`absolute inset-0 rounded-xl -z-10 transition-opacity duration-500 ${isActive ? 'opacity-100' : 'opacity-0'} ${option.time === 5 ? 'bg-cyan-500/5' : option.time === 15 ? 'bg-violet-500/5' : 'bg-rose-500/5'}`} />
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            </div>
+
+                            <button 
+                              onClick={() => runScan('web', 'web', { target: targetUrl, timeLimit: dastTimeLimit, type: 'recon' })} 
+                              disabled={scanState.isActive} 
+                              className={`w-full inline-flex items-center justify-center gap-2 text-white px-4 py-4 rounded-lg text-sm font-black transition-all duration-700 disabled:opacity-50 shadow-lg relative overflow-hidden
+                                ${dastTimeLimit === 5 ? 'bg-cyan-600 hover:bg-cyan-500 shadow-cyan-900/20' : 
+                                  dastTimeLimit === 15 ? 'bg-violet-600 hover:bg-violet-500 shadow-violet-900/20' : 
+                                  'bg-rose-600 hover:bg-rose-500 shadow-rose-900/20'}`}
+                            >
+                              <Zap size={18} className={scanState.isActive ? 'animate-spin' : 'animate-pulse'} /> 
+                              INITIATE {dastTimeLimit}-MINUTE SCAN
+                            </button>
+                          </motion.div>
+
+                        ) : (
+
+                          <motion.div key="full" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} transition={{ duration: 0.2 }} className="flex flex-col gap-6">
+                            <div className="bg-rose-500/5 border border-rose-500/20 rounded-lg p-5">
+                              <div className="flex items-start gap-3">
+                                <AlertTriangle size={20} className="text-rose-500 flex-shrink-0 mt-0.5"/>
+                                <div>
+                                  <h4 className="text-sm font-bold text-rose-400">Deep Attack Vector Warning</h4>
+                                  <p className="text-xs text-zinc-400 mt-1.5 leading-relaxed">
+                                    This scan will execute highly aggressive payloads, including SQL injection, XSS, and CSRF simulations. It is extremely noisy and will continue running until all endpoint permutations are exhausted. Do not run on production databases during peak hours.
+                                  </p>
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="bg-[#09090b] border border-zinc-800 rounded-lg overflow-hidden transition-colors">
+                              <button 
+                                onClick={() => setShowDastConfig(!showDastConfig)}
+                                className="w-full flex items-center justify-between p-4 text-xs font-bold uppercase tracking-widest text-zinc-400 hover:text-white transition-colors hover:bg-zinc-900/50"
+                              >
+                                <div className="flex items-center gap-2">
+                                  <Box size={14} className={showDastConfig ? 'text-indigo-400' : ''} />
+                                  Engine Configurations
+                                </div>
+                                <ChevronRight size={14} className={`transition-transform duration-300 ${showDastConfig ? 'rotate-90' : ''}`} />
+                              </button>
+
+                              <AnimatePresence>
+                                {showDastConfig && (
+                                  <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="border-t border-zinc-800 bg-black/50">
+                                    <div className="p-5 flex flex-col gap-5">
+                                      <div>
+                                        <div className="flex justify-between items-center mb-2">
+                                          <label className="text-[16px] text-zinc-500 font-bold uppercase tracking-widest">Concurrent Threads</label>
+                                          <span className="text-xs font-black text-indigo-400">{dastConfig.concurrency}</span>
+                                        </div>
+                                        <input 
+                                          type="range" min="1" max="50" 
+                                          value={dastConfig.concurrency}
+                                          onChange={(e) => setDastConfig({...dastConfig, concurrency: parseInt(e.target.value)})}
+                                          className="w-full accent-indigo-500"
+                                        />
+                                        <p className="text-[10px] text-zinc-600 uppercase mt-1">Higher values increase speed but risk Denial of Service.</p>
+                                      </div>
+
+                                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        <button 
+                                          onClick={() => setDastConfig({...dastConfig, smartThrottling: !dastConfig.smartThrottling})}
+                                          className={`flex items-center justify-between p-3 rounded border text-left transition-colors ${dastConfig.smartThrottling ? 'bg-indigo-500/10 border-indigo-500/30 text-indigo-400' : 'bg-zinc-900 border-zinc-800 text-zinc-500 hover:border-zinc-700'}`}
+                                        >
+                                          <div><p className="text-[12px] font-bold uppercase tracking-widest">Smart Throttling</p><p className="text-[9px] opacity-90 uppercase mt-0.5">Auto-delay if server lags</p></div>
+                                          <div className={`w-3 h-3 rounded-full ${dastConfig.smartThrottling ? 'bg-indigo-400 shadow-[0_0_10px_#818cf8]' : 'bg-zinc-700'}`} />
+                                        </button>
+
+                                        <button 
+                                          onClick={() => setDastConfig({...dastConfig, recursiveCrawl: !dastConfig.recursiveCrawl})}
+                                          className={`flex items-center justify-between p-3 rounded border text-left transition-colors ${dastConfig.recursiveCrawl ? 'bg-rose-500/10 border-rose-500/30 text-rose-400' : 'bg-zinc-900 border-zinc-800 text-zinc-500 hover:border-zinc-700'}`}
+                                        >
+                                          <div><p className="text-[12px] font-bold uppercase tracking-widest">Recursive Crawl</p><p className="text-[9px] opacity-90 uppercase mt-0.5">Map every nested directory</p></div>
+                                          <div className={`w-3 h-3 rounded-full ${dastConfig.recursiveCrawl ? 'bg-rose-400 shadow-[0_0_10px_#fb7185]' : 'bg-zinc-700'}`} />
+                                        </button>
+                                      </div>
+
+                                      <div>
+                                        <label className="text-[12px] text-zinc-500 font-bold uppercase tracking-widest mb-2 block">Custom Headers / Auth</label>
+                                        <textarea 
+                                          value={dastConfig.customHeaders}
+                                          onChange={(e) => setDastConfig({...dastConfig, customHeaders: e.target.value})}
+                                          placeholder="Authorization: Bearer token..."
+                                          className="w-full bg-[#050505] border border-zinc-800 rounded p-3 text-xs text-zinc-300 font-mono focus:border-indigo-500 outline-none h-20 resize-none placeholder:text-zinc-700"
+                                        />
+                                      </div>
                                     </div>
+                                  </motion.div>
+                                )}
+                              </AnimatePresence>
+                            </div>
 
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                      <button 
-                                        onClick={() => setDastConfig({...dastConfig, smartThrottling: !dastConfig.smartThrottling})}
-                                        className={`flex items-center justify-between p-3 rounded border text-left transition-colors ${dastConfig.smartThrottling ? 'bg-indigo-500/10 border-indigo-500/30 text-indigo-400' : 'bg-zinc-900 border-zinc-800 text-zinc-500 hover:border-zinc-700'}`}
-                                      >
-                                        <div><p className="text-[12px] font-bold uppercase tracking-widest">Smart Throttling</p><p className="text-[9px] opacity-90 uppercase mt-0.5">Auto-delay if server lags</p></div>
-                                        <div className={`w-3 h-3 rounded-full ${dastConfig.smartThrottling ? 'bg-indigo-400 shadow-[0_0_10px_#818cf8]' : 'bg-zinc-700'}`} />
-                                      </button>
+                            <button 
+                              onClick={() => runScan('web', 'web', { target: targetUrl, timeLimit: 0, type: 'deep', config: dastConfig })} 
+                              disabled={scanState.isActive} 
+                              className="w-full relative overflow-hidden inline-flex items-center justify-center gap-2 bg-rose-600 hover:bg-rose-500 text-white px-4 py-3.5 rounded-lg text-sm font-bold transition-all disabled:opacity-50 group"
+                            >
+                              <div className="absolute inset-0 bg-[linear-gradient(45deg,transparent_25%,rgba(255,255,255,0.2)_50%,transparent_75%)] bg-[length:250%_250%,100%_100%] bg-[position:200%_0,0_0] bg-no-repeat transition-[background-position_0s_ease] hover:bg-[position:-100%_0,0_0] duration-[1500ms]" />
+                              <Bug size={18} /> Execute Full DAST Sweep
+                            </button>
+                          </motion.div>
 
-                                      <button 
-                                        onClick={() => setDastConfig({...dastConfig, recursiveCrawl: !dastConfig.recursiveCrawl})}
-                                        className={`flex items-center justify-between p-3 rounded border text-left transition-colors ${dastConfig.recursiveCrawl ? 'bg-rose-500/10 border-rose-500/30 text-rose-400' : 'bg-zinc-900 border-zinc-800 text-zinc-500 hover:border-zinc-700'}`}
-                                      >
-                                        <div><p className="text-[12px] font-bold uppercase tracking-widest">Recursive Crawl</p><p className="text-[9px] opacity-90 uppercase mt-0.5">Map every nested directory</p></div>
-                                        <div className={`w-3 h-3 rounded-full ${dastConfig.recursiveCrawl ? 'bg-rose-400 shadow-[0_0_10px_#fb7185]' : 'bg-zinc-700'}`} />
-                                      </button>
-                                    </div>
-
-                                    <div>
-                                      <label className="text-[12px] text-zinc-500 font-bold uppercase tracking-widest mb-2 block">Custom Headers / Auth</label>
-                                      <textarea 
-                                        value={dastConfig.customHeaders}
-                                        onChange={(e) => setDastConfig({...dastConfig, customHeaders: e.target.value})}
-                                        placeholder="Authorization: Bearer token..."
-                                        className="w-full bg-[#050505] border border-zinc-800 rounded p-3 text-xs text-zinc-300 font-mono focus:border-indigo-500 outline-none h-20 resize-none placeholder:text-zinc-700"
-                                      />
-                                    </div>
-                                  </div>
-                                </motion.div>
-                              )}
-                            </AnimatePresence>
-                          </div>
-
-                          <button 
-                            onClick={() => runScan('web', 'web', { target: targetUrl, timeLimit: 0, type: 'deep', config: dastConfig })} 
-                            disabled={scanState.isActive} 
-                            className="w-full relative overflow-hidden inline-flex items-center justify-center gap-2 bg-rose-600 hover:bg-rose-500 text-white px-4 py-3.5 rounded-lg text-sm font-bold transition-all disabled:opacity-50 group"
-                          >
-                            <div className="absolute inset-0 bg-[linear-gradient(45deg,transparent_25%,rgba(255,255,255,0.2)_50%,transparent_75%)] bg-[length:250%_250%,100%_100%] bg-[position:200%_0,0_0] bg-no-repeat transition-[background-position_0s_ease] hover:bg-[position:-100%_0,0_0] duration-[1500ms]" />
-                            <Bug size={18} /> Execute Full DAST Sweep
-                          </button>
-                        </motion.div>
-
-                      )}
-                    </AnimatePresence>
-                    {renderProgressBar('web')}
+                        )}
+                      </AnimatePresence>
+                      {renderProgressBar('web')}
+                    </div>
+                    {renderFindingsList(activeWeb)}
+                    
                   </div>
-                  {renderFindingsList(activeWeb)}
                 </motion.div>
               )}
 
               {/* CONTAINER SECURITY PAGE */}
               {activeTab === 'Container Security' && (
                 <motion.div key="container" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}>
-                  <div className="mb-8 relative z-20"><h2 className="text-2xl font-bold text-white tracking-tight">Container Runtime Security</h2><p className="text-sm text-zinc-500 mt-1">Scan Docker images for OS-level vulnerabilities and CVEs.</p></div>
-                  <div className="bg-zinc-900/60 backdrop-blur-md border border-zinc-800 rounded-xl p-6 flex flex-col gap-3 relative z-20">
-                    <div className="flex gap-3">
-                      <div className="relative flex-1"><Box className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" size={16}/><input type="text" value={dockerImage} onChange={(e) => setDockerImage(e.target.value)} className="w-full bg-[#09090b] border border-zinc-800 rounded-md py-2 pl-10 pr-4 text-sm text-zinc-200 outline-none" placeholder="docker-image:tag" /></div>
-                      <button onClick={() => runScan('container', 'container', { image: dockerImage })} disabled={scanState.isActive} className="inline-flex items-center justify-center gap-2 bg-cyan-600 hover:bg-cyan-500 text-white px-6 py-2 rounded-md text-sm font-medium transition-all disabled:opacity-50">Analyze Image</button>
+                  <div className="mb-6 relative z-20 flex flex-col md:flex-row md:items-end justify-between gap-4">
+                    <div>
+                      <h2 className="text-2xl font-bold text-white tracking-tight">Container & IaC Security</h2>
+                      <p className="text-sm text-zinc-500 mt-1">Scan public registry images for CVEs or analyze raw Dockerfiles for misconfigurations.</p>
                     </div>
+                  </div>
+
+                  <div className="flex gap-2 p-1.5 bg-[#09090b] border border-zinc-800 rounded-lg w-max mb-6 relative z-20 shadow-inner">
+                    {['image', 'dockerfile'].map((mode) => (
+                      <button
+                        key={mode}
+                        onClick={() => setContainerScanMode(mode)}
+                        className={`relative px-6 py-2 text-sm font-semibold rounded-md transition-colors z-10 ${containerScanMode === mode ? 'text-indigo-400' : 'text-zinc-500 hover:text-zinc-300'}`}
+                      >
+                        {containerScanMode === mode && (
+                          <motion.div
+                            layoutId="containerModeActive"
+                            className="absolute inset-0 rounded-md -z-10 bg-indigo-500/10 border border-indigo-500/30"
+                            transition={{ type: "spring", stiffness: 400, damping: 30 }}
+                          />
+                        )}
+                        {mode === 'image' ? 'Registry Image' : 'Raw Dockerfile'}
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="bg-zinc-900/60 backdrop-blur-md border border-zinc-800 rounded-xl p-6 relative z-20 overflow-hidden shadow-lg">
+                    <AnimatePresence mode="wait">
+                      {containerScanMode === 'image' ? (
+                        <motion.div key="image" initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }} transition={{ duration: 0.2 }} className="relative mb-8">
+                          <Box className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500" size={18}/>
+                          <input 
+                            type="text" 
+                            value={targetUrl} 
+                            onChange={(e) => setTargetUrl(e.target.value)} 
+                            className="w-full bg-[#050505] border border-zinc-800 rounded-lg py-4 pl-12 pr-4 text-sm text-zinc-200 outline-none transition-all focus:border-indigo-500/50 shadow-inner" 
+                            placeholder="e.g., nginx:latest or python:3.9-slim" 
+                          />
+                        </motion.div>
+                      ) : (
+                        <motion.div key="dockerfile" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} transition={{ duration: 0.2 }} className="relative mb-8">
+                          <FileCode className="absolute left-4 top-4 text-zinc-500" size={18}/>
+                          <textarea 
+                            value={dockerfileContent} 
+                            onChange={(e) => setDockerfileContent(e.target.value)} 
+                            className="w-full h-48 bg-[#050505] border border-zinc-800 rounded-lg py-4 pl-12 pr-4 text-sm text-zinc-300 font-mono outline-none transition-all focus:border-indigo-500/50 shadow-inner resize-none placeholder:text-zinc-700" 
+                            placeholder="FROM ubuntu:latest&#10;USER root&#10;RUN apt-get update..." 
+                          />
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+
+                    <button 
+                      onClick={() => {
+                        if (containerScanMode === 'image') {
+                          runScan('container', 'container', { image: targetUrl });
+                        } else {
+                          runScan('dockerfile', 'container', { content: dockerfileContent });
+                        }
+                      }} 
+                      disabled={scanState.isActive} 
+                      className="w-full inline-flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-4 rounded-lg text-sm font-black transition-all duration-300 disabled:opacity-50 shadow-lg shadow-indigo-900/20"
+                    >
+                      <Zap size={18} className={scanState.isActive ? 'animate-spin' : ''} /> 
+                      ANALYZE {containerScanMode === 'image' ? 'IMAGE' : 'DOCKERFILE'}
+                    </button>
+                    
                     {renderProgressBar('container')}
                   </div>
                   {renderFindingsList(activeContainer)}
+                </motion.div>
+              )}
+
+              {/* DATABASE SECURITY PAGE */}
+              {activeTab === 'Database Security' && (
+                <motion.div key="database" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}>
+                  <div className="mb-6 relative z-20 flex flex-col md:flex-row md:items-end justify-between gap-4">
+                    <div>
+                      <h2 className="text-2xl font-bold text-white tracking-tight">Database Infrastructure Assessment</h2>
+                      <p className="text-sm text-zinc-500 mt-1">Audit internal IAM privileges, password policies, and network exposure.</p>
+                    </div>
+                  </div>
+
+                  <div className="bg-zinc-900/60 backdrop-blur-md border border-zinc-800 rounded-xl p-6 relative z-20 overflow-hidden shadow-lg mb-6">
+                    
+                    {/* ✨ ENTERPRISE FEATURE LOCK OVERLAY */}
+                    <AnimatePresence>
+                      {dbConfig.db_type !== 'mysql' && (
+                        <motion.div 
+                          initial={{ opacity: 0, backdropFilter: "blur(0px)" }} 
+                          animate={{ opacity: 1, backdropFilter: "blur(8px)" }} 
+                          exit={{ opacity: 0, backdropFilter: "blur(0px)" }} 
+                          className="absolute inset-0 z-50 flex items-center justify-center bg-zinc-950/80 rounded-xl"
+                        >
+                          <div className="bg-amber-500/10 border border-amber-500/30 p-8 rounded-xl flex flex-col items-center text-center max-w-md mx-4 shadow-2xl">
+                            <div className="bg-amber-500/20 p-4 rounded-full mb-4">
+                              <Info size={32} className="text-amber-500" />
+                            </div>
+                            <h4 className="text-lg font-bold text-amber-400 uppercase tracking-widest mb-2">Enterprise Feature Locked</h4>
+                            <p className="text-sm text-zinc-300 leading-relaxed mb-8">
+                              Deep Vulnerability Assessment for <strong className="text-white">{
+                                dbConfig.db_type === 'postgresql' ? 'PostgreSQL' : 
+                                dbConfig.db_type === 'mssql' ? 'Microsoft SQL Server' : 'Oracle Database'
+                              }</strong> is currently in Enterprise Beta. Please use the MySQL module for the current stable MVP release.
+                            </p>
+                            <button 
+                              onClick={() => {
+                                setDbConfig(prev => ({...prev, db_type: 'mysql', port: '3306'}));
+                                setDbBetaMessage(null); // Clear the message state just in case
+                              }}
+                              className="bg-amber-500 hover:bg-amber-400 text-zinc-950 px-6 py-3 rounded-lg text-sm font-bold uppercase tracking-widest transition-all flex items-center gap-2 shadow-[0_0_15px_rgba(245,158,11,0.3)]"
+                            >
+                              <ChevronLeft size={16} /> Go Back to MySQL
+                            </button>
+                          </div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+
+                    {/* Database Type Dropdown */}
+                    <div className="mb-6">
+                      <label className="text-[12px] text-zinc-500 font-bold uppercase tracking-widest mb-2 block">Target Architecture</label>
+                      <div className="relative">
+                        <HardDrive className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500" size={16} />
+                        <select 
+                          value={dbConfig.db_type}
+                          onChange={(e) => {
+                            setDbConfig({...dbConfig, db_type: e.target.value});
+                            if(e.target.value === 'postgresql') setDbConfig(prev => ({...prev, db_type: e.target.value, port: '5432'}));
+                            if(e.target.value === 'mssql') setDbConfig(prev => ({...prev, db_type: e.target.value, port: '1433'}));
+                            if(e.target.value === 'oracle') setDbConfig(prev => ({...prev, db_type: e.target.value, port: '1521'}));
+                            if(e.target.value === 'mysql') setDbConfig(prev => ({...prev, db_type: e.target.value, port: '3306'}));
+                          }}
+                          className="w-full bg-[#050505] border border-zinc-800 rounded-lg py-4 pl-12 pr-4 text-sm text-zinc-200 outline-none focus:border-emerald-500/50 appearance-none cursor-pointer"
+                        >
+                          <option value="mysql">MySQL Enterprise / Community</option>
+                          <option value="postgresql">PostgreSQL (Beta)</option>
+                          <option value="mssql">Microsoft SQL Server (Beta)</option>
+                          <option value="oracle">Oracle Database (Beta)</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
+                      <div className="relative">
+                        <Server className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500" size={16} />
+                        <input type="text" placeholder="Host (e.g., localhost or 10.0.0.5)" value={dbConfig.host} onChange={(e) => setDbConfig({...dbConfig, host: e.target.value})} className="w-full bg-[#050505] border border-zinc-800 rounded-lg py-3 pl-12 pr-4 text-sm text-zinc-200 outline-none focus:border-emerald-500/50" />
+                      </div>
+                      <div className="relative">
+                        <p className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500 text-xs font-bold">PORT</p>
+                        <input type="text" placeholder="Port" value={dbConfig.port} onChange={(e) => setDbConfig({...dbConfig, port: e.target.value})} className="w-full bg-[#050505] border border-zinc-800 rounded-lg py-3 pl-14 pr-4 text-sm text-zinc-200 outline-none focus:border-emerald-500/50 font-mono" />
+                      </div>
+                      <div className="relative">
+                        <User className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500" size={16} />
+                        <input type="text" placeholder="Username (e.g., root)" value={dbConfig.user} onChange={(e) => setDbConfig({...dbConfig, user: e.target.value})} className="w-full bg-[#050505] border border-zinc-800 rounded-lg py-3 pl-12 pr-4 text-sm text-zinc-200 outline-none focus:border-emerald-500/50" />
+                      </div>
+                      <div className="relative">
+                        <Key className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500" size={16} />
+                        <input type="password" placeholder="Password" value={dbConfig.password} onChange={(e) => setDbConfig({...dbConfig, password: e.target.value})} className="w-full bg-[#050505] border border-zinc-800 rounded-lg py-3 pl-12 pr-4 text-sm text-zinc-200 outline-none focus:border-emerald-500/50" />
+                      </div>
+                    </div>
+
+                    <button 
+                      onClick={executeDatabaseScan} 
+                      disabled={scanState.isActive} 
+                      className="w-full inline-flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-4 rounded-lg text-sm font-black transition-all duration-300 disabled:opacity-50 shadow-lg shadow-emerald-900/20"
+                    >
+                      <Database size={18} className={scanState.isActive ? 'animate-bounce' : ''} /> 
+                      AUTHENTICATE & AUDIT INFRASTRUCTURE
+                    </button>
+                    
+                    {scanState.isActive && (
+                      <div className="mt-6">
+                        <div className="h-1.5 w-full bg-zinc-900 rounded-full overflow-hidden">
+                          <motion.div initial={{ width: 0 }} animate={{ width: `${scanState.progress}%` }} className="h-full bg-emerald-500 shadow-[0_0_15px_#10b981]" />
+                        </div>
+                        <p className="text-center text-[10px] text-zinc-500 mt-2 uppercase tracking-widest animate-pulse">Establishing Secure Database Tunnel...</p>
+                      </div>
+                    )}
+                  </div>
+
+                  {renderFindingsList(activeDb)}
+
                 </motion.div>
               )}
             </AnimatePresence>
