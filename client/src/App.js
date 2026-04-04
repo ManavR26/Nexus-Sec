@@ -3,12 +3,13 @@ import axios from 'axios';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   ShieldAlert, Code2, Globe, Box, LayoutGrid, Download, Trash2, Github, 
-  Activity, AlertTriangle, ChevronLeft, ChevronRight, Filter, X, 
+  Activity, AlertTriangle, BookOpen, ChevronLeft, ChevronRight, Filter, X, 
   TerminalSquare, Sparkles, Server, Zap, Bug, FileCode2, LogOut, Bell, 
   CheckCircle, XCircle, Info, Clock, FileText, Sliders, GripVertical, Send,
-  ShieldCheck, Scale, FileCode, HardDrive, User, Key, Database
+  ShieldCheck, Scale, FileCode, HardDrive, User, Key, Database,
+  Shield, Lock, ChevronDown // ✨ Added these two right here at the end!
 } from 'lucide-react';
-import { BarChart, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis } from 'recharts';
+import { BarChart, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, PieChart, Pie } from 'recharts';
 
 // ==========================================
 // 🟢 MATRIX SPOTLIGHT BACKGROUND
@@ -102,6 +103,63 @@ function App() {
   const [containerScanMode, setContainerScanMode] = useState('image');
   const [dockerfileContent, setDockerfileContent] = useState('');
 
+  // ✨ RBAC AUTHENTICATION STATE
+  const [isAuthenticated, setIsAuthenticated] = useState(() => localStorage.getItem('nexusAuth') === 'true');
+  const [userRole, setUserRole] = useState(() => localStorage.getItem('nexusRole') || 'admin');
+  const [loginForm, setLoginForm] = useState({ role: 'admin', password: '' });
+  const [loginError, setLoginError] = useState('');
+  const [isUnlocking, setIsUnlocking] = useState(false);
+  // Hardcoded Demo Credentials
+  const ROLE_CREDENTIALS = {
+    admin: process.env.REACT_APP_ADMIN_PASS,
+    developer: process.env.REACT_APP_DEV_PASS,
+    auditor: process.env.REACT_APP_AUDITOR_PASS
+  };
+
+  const handleLogin = (e) => {
+    e.preventDefault();
+    if (ROLE_CREDENTIALS[loginForm.role] === loginForm.password) {
+      setLoginError('');
+      setIsUnlocking(true); 
+
+      setTimeout(() => {
+        setIsAuthenticated(true);
+        setUserRole(loginForm.role);
+        localStorage.setItem('nexusAuth', 'true');
+        localStorage.setItem('nexusRole', loginForm.role);
+        setIsUnlocking(false); 
+
+        // ✨ NEW: Check mailbox and trigger notifications for Developers
+        if (loginForm.role === 'developer') {
+          const resolved = JSON.parse(localStorage.getItem('resolvedDismissals')) || [];
+          if (resolved.length > 0) {
+            // Wait 800ms for the dashboard to finish animating in, then fire the toasts!
+            setTimeout(() => {
+              resolved.forEach(res => {
+                if (res.status === 'approved') {
+                  notify('success', `Admin APPROVED your dismissal request for: ${res.issueId}`);
+                } else {
+                  notify('error', `Admin DENIED your dismissal request for: ${res.issueId}`);
+                }
+              });
+              // Empty the mailbox so they don't see it again next time
+              setResolvedDismissals([]);
+            }, 800);
+          }
+        }
+      }, 600); 
+    } else {
+      setLoginError('Invalid credentials for selected role.');
+    }
+  };
+
+  const handleLogout = () => {
+    setIsAuthenticated(false);
+    setUserRole('admin');
+    localStorage.removeItem('nexusAuth');
+    localStorage.removeItem('nexusRole');
+  };
+
   // 🛡️ DAST Ethical Warning State
   const [dastWarningAccepted, setDastWarningAccepted] = useState(() => {
     return sessionStorage.getItem('dastWarningAccepted') === 'true';
@@ -137,6 +195,12 @@ function App() {
 
   // --- 🧠 AI STATE ---
   const [aiModalTab, setAiModalTab] = useState('chat');
+  const [redTeamHistory, setRedTeamHistory] = useState(() => JSON.parse(localStorage.getItem('redTeamHistory')) || {});
+  const [showRedTeamWarning, setShowRedTeamWarning] = useState(true);
+  const [redTeamLoading, setRedTeamLoading] = useState(false);
+  
+  useEffect(() => { localStorage.setItem('redTeamHistory', JSON.stringify(redTeamHistory)); }, [redTeamHistory]);
+
   const [chatHistories, setChatHistories] = useState(() => JSON.parse(localStorage.getItem('chatHistories')) || {});
   const [pocData, setPocData] = useState(() => JSON.parse(localStorage.getItem('pocData')) || {});
   const [pocLoading, setPocLoading] = useState(false);
@@ -182,6 +246,25 @@ function App() {
 
   const [scanState, setScanState] = useState({ isActive: false, type: null, progress: 0, elapsed: 0, estimatedTotal: 25, phase: '' });
   const scanTimerRef = useRef(null);
+  const lastTargetsRef = useRef({ github: '', web: '', container: '', dockerfile: '', db: '' });
+
+  // ✨ HEURISTIC TREND ENGINE STATE & LOGIC
+  const [scanHistory, setScanHistory] = useState(() => JSON.parse(localStorage.getItem('scanHistory')) || {
+    sast: 0, dast: 0, container: 0, db: 0, total: 0
+  });
+  useEffect(() => { localStorage.setItem('scanHistory', JSON.stringify(scanHistory)); }, [scanHistory]);
+
+  const generateTrendBadge = (oldVal, newVal, isDb = false) => {
+    if (oldVal === 0 && newVal === 0) return { text: isDb ? 'Audit Passed' : 'Awaiting Scan', color: 'zinc', icon: Clock };
+    if (newVal > oldVal) {
+      const diff = newVal - oldVal;
+      if (diff >= 10) return { text: `Critical Spike (+${diff})`, color: 'rose', icon: AlertTriangle };
+      return { text: `Elevated (+${diff})`, color: 'rose', icon: Activity };
+    }
+    if (newVal < oldVal) return { text: `Mitigated (-${oldVal - newVal})`, color: 'emerald', icon: CheckCircle };
+    if (newVal === oldVal && newVal > 0) return { text: 'Threats Stagnant', color: 'amber', icon: ShieldAlert };
+    return { text: 'Audit Passed', color: 'emerald', icon: ShieldCheck };
+  };
 
   const formatTime = (seconds) => {
     const m = Math.floor(seconds / 60).toString().padStart(2, '0');
@@ -192,8 +275,111 @@ function App() {
   // --- PERSISTENT SESSION STATE ---
   const [githubFindings, setGithubFindings] = useState(() => JSON.parse(localStorage.getItem('githubFindings')) || []);
   const [webFindings, setWebFindings] = useState(() => JSON.parse(localStorage.getItem('webFindings')) || []);
-  const [containerFindings, setContainerFindings] = useState(() => JSON.parse(localStorage.getItem('containerFindings')) || []);
+  const [registryFindings, setRegistryFindings] = useState(() => JSON.parse(localStorage.getItem('registryFindings')) || []);
+  const [dockerfileFindings, setDockerfileFindings] = useState(() => JSON.parse(localStorage.getItem('dockerfileFindings')) || []);
+  const [resolvedFindings, setResolvedFindings] = useState(() => JSON.parse(localStorage.getItem('resolvedFindings')) || []);
+
+  useEffect(() => { 
+    localStorage.setItem('resolvedFindings', JSON.stringify(resolvedFindings)); 
+  }, [resolvedFindings]);
+
   const [ignoredIds, setIgnoredIds] = useState(() => JSON.parse(localStorage.getItem('ignoredIds')) || []);
+  // ✨ MAKER/CHECKER WORKFLOW STATE
+  const [pendingDismissals, setPendingDismissals] = useState(() => JSON.parse(localStorage.getItem('pendingDismissals')) || {});
+  const [reviewingIssue, setReviewingIssue] = useState(null);
+  useEffect(() => { localStorage.setItem('pendingDismissals', JSON.stringify(pendingDismissals)); }, [pendingDismissals]);
+
+  // ✨ NEW: Mailbox for resolved requests
+  const [resolvedDismissals, setResolvedDismissals] = useState(() => JSON.parse(localStorage.getItem('resolvedDismissals')) || []);
+  useEffect(() => { localStorage.setItem('resolvedDismissals', JSON.stringify(resolvedDismissals)); }, [resolvedDismissals]);
+
+  // ✨ IMMUTABLE AUDIT TRAIL (LEDGER)
+  const [auditTrail, setAuditTrail] = useState(() => JSON.parse(localStorage.getItem('auditTrail')) || []);
+  useEffect(() => { localStorage.setItem('auditTrail', JSON.stringify(auditTrail)); }, [auditTrail]);
+  const [showLedger, setShowLedger] = useState(false);
+
+  // Helper function to easily write to the ledger
+  const logToLedger = (actorRole, actionType, targetIssue) => {
+    const newEntry = {
+      id: Date.now(),
+      timestamp: new Date().toLocaleString(),
+      actor: actorRole,
+      action: actionType,
+      target: targetIssue
+    };
+    setAuditTrail(prev => [newEntry, ...prev]); // Adds newest to the top
+  };
+
+  // ✨ ULTRA-STRICT CONTAINER INPUT VALIDATION GATEWAY
+  const validateContainerInput = (inputValue, scanType) => {
+    if (!inputValue || inputValue.trim() === '') {
+      notify('error', 'Input cannot be empty.');
+      return false;
+    }
+
+    if (scanType === 'registry') {
+      // STRICT REGEX: Must contain a colon to enforce tags (e.g. ubuntu:latest). Rejects plain words like "hello".
+      const dockerImageRegex = /^[a-zA-Z0-9.\-_/]+:[a-zA-Z0-9.\-_]+$/;
+      if (!dockerImageRegex.test(inputValue.trim())) {
+        notify('error', 'Strict Policy: Please specify an image tag (e.g., node:14-alpine). Single words are not allowed.');
+        return false;
+      }
+    } else if (scanType === 'raw') {
+      // STRICT REGEX: "FROM" must be at the very start of the string or the start of a new line.
+      const hasDockerFrom = /(^|\n)FROM\s+/.test(inputValue);
+      const hasK8sApi = /(^|\n)apiVersion:\s+/i.test(inputValue);
+      const hasTerraform = /(^|\n)resource\s+"/i.test(inputValue);
+
+      if (!hasDockerFrom && !hasK8sApi && !hasTerraform) {
+        notify('error', 'Invalid IaC script. Must be a valid Dockerfile (starting with FROM), Kubernetes YAML, or Terraform config.');
+        return false;
+      }
+    }
+    return true; 
+  };
+
+  const handleRequestDismissal = (issueId) => {
+    setPendingDismissals(prev => ({ ...prev, [issueId]: { requester: userRole, timestamp: new Date().toLocaleTimeString() } }));
+    logToLedger(userRole, 'REQUESTED EXCEPTION', issueId); // ✨ NEW
+    notify('info', 'Dismissal request routed to DevSecOps Admin.');
+  };
+
+  const handleApproveDismissal = (issueId) => {
+    // 1. Remove from active view
+    setIgnoredIds(prev => [...prev, issueId]); 
+    
+    // 2. Clear from pending requests
+    const updated = { ...pendingDismissals };
+    const requester = updated[issueId]?.requester || 'developer';
+    delete updated[issueId];
+    setPendingDismissals(updated);
+    setResolvedDismissals(prev => [...prev, { issueId, status: 'approved' }]);
+    
+    // 3. Log to Immutable Ledger
+    logToLedger('admin', 'APPROVED EXCEPTION', issueId); 
+
+    // ✨ NEW: Add to Remediation History as a Dismissal
+    const findingToDismiss = allActiveFindings.find(f => f.Issue === issueId) || { Issue: issueId, Type: 'Unknown', Severity: 'Unknown' };
+    setResolvedFindings(prev => [{
+      ...findingToDismiss,
+      resolvedAt: new Date().toLocaleString(),
+      resolvedBy: userRole,
+      status: 'Risk Accepted (Dismissed)', // Labels it differently from a real fix
+      origin: 'Manual Exception',
+      File: findingToDismiss.File || 'System Exception'
+    }, ...prev]);
+
+    notify('success', 'Vulnerability exception approved and recorded to history.');
+  };
+
+  const handleDenyDismissal = (issueId) => {
+    const updated = { ...pendingDismissals };
+    delete updated[issueId];
+    setPendingDismissals(updated);
+    setResolvedDismissals(prev => [...prev, { issueId, status: 'denied' }]);
+    logToLedger('admin', 'DENIED EXCEPTION', issueId); // ✨ NEW
+    notify('error', 'Vulnerability exception denied. Fix required.');
+  };
 
   const [githubToken, setGithubToken] = useState(() => sessionStorage.getItem('githubToken') || null);
   const [userRepos, setUserRepos] = useState(() => JSON.parse(sessionStorage.getItem('userRepos')) || []);
@@ -203,20 +389,32 @@ function App() {
   const ITEMS_PER_PAGE = 5;
 
   const [repo, setRepo] = useState('');
-  const [targetUrl, setTargetUrl] = useState('http://testphp.vulnweb.com');
-  const [dastMode, setDastMode] = useState('time-limited'); 
-  const [dastTimeLimit, setDastTimeLimit] = useState(15);   
-  const [showDastConfig, setShowDastConfig] = useState(false);
-  const [dastConfig, setDastConfig] = useState({
-    concurrency: 10,
-    smartThrottling: true,
-    recursiveCrawl: false,
-    customHeaders: ''
+  const [targetUrl, setTargetUrl] = useState('');
+  const [containerImage, setContainerImage] = useState('');
+ // ⚡ OWASP ZAP DAST STATE
+  const [showZapConfig, setShowZapConfig] = useState(false);
+  const [zapConfig, setZapConfig] = useState({
+    features: ['spider', 'passive', 'active'], 
+    scanStrength: 'Default',
+    stealthMode: false, 
   });
+
+  const toggleZapFeature = (featureId) => {
+    setZapConfig(prev => {
+      const isSelected = prev.features.includes(featureId);
+      return {
+        ...prev,
+        features: isSelected 
+          ? prev.features.filter(t => t !== featureId)
+          : [...prev.features, featureId]
+      };
+    });
+  };
 
   useEffect(() => { localStorage.setItem('githubFindings', JSON.stringify(githubFindings)); }, [githubFindings]);
   useEffect(() => { localStorage.setItem('webFindings', JSON.stringify(webFindings)); }, [webFindings]);
-  useEffect(() => { localStorage.setItem('containerFindings', JSON.stringify(containerFindings)); }, [containerFindings]);
+  useEffect(() => { localStorage.setItem('registryFindings', JSON.stringify(registryFindings)); }, [registryFindings]);
+  useEffect(() => { localStorage.setItem('dockerfileFindings', JSON.stringify(dockerfileFindings)); }, [dockerfileFindings]);
   useEffect(() => { localStorage.setItem('ignoredIds', JSON.stringify(ignoredIds)); }, [ignoredIds]);
   useEffect(() => { 
     if (githubToken) sessionStorage.setItem('githubToken', githubToken);
@@ -292,19 +490,37 @@ function App() {
 
   const processedGithub = applyRulesToFindings(githubFindings);
   const processedWeb = applyRulesToFindings(webFindings);
-  const processedContainer = applyRulesToFindings(containerFindings);
-  const processedDb = applyRulesToFindings(dbFindings); // ✨ NEW
+  const processedRegistry = applyRulesToFindings(registryFindings);
+  const processedDockerfile = applyRulesToFindings(dockerfileFindings);
+  const processedDb = applyRulesToFindings(dbFindings);
 
   const getActiveFindings = (findingsList) => findingsList.filter(f => !ignoredIds.includes(f.Issue) && (severityFilter.length === 0 || severityFilter.includes(f.Severity)));
   
   const activeGithub = getActiveFindings(processedGithub);
   const activeWeb = getActiveFindings(processedWeb);
-  const activeContainer = getActiveFindings(processedContainer);
-  const activeDb = getActiveFindings(processedDb); // ✨ NEW
+  // --- 1. Registry Scan: Only show live OS/Package CVEs ---
+const activeRegistry = getActiveFindings(processedRegistry).filter(f => 
+  f.Type.includes('Container OS Vulnerability')
+);
 
-  // ✨ NEW: Added activeDb to the global counts and arrays!
+// --- 2. Dockerfile Scan: Only show the hardcoded code-level bugs ---
+const activeDockerfile = getActiveFindings(processedDockerfile).filter(f => 
+  f.Type.includes('Dockerfile Security')
+);
+  const activeDb = getActiveFindings(processedDb);
+
+  // ✨ MAGIC MERGE: We combine them here so your global Dashboard Charts & KPI counts stay accurate!
+  const activeContainer = [...activeRegistry, ...activeDockerfile];
+
   const totalIssues = activeGithub.length + activeWeb.length + activeContainer.length + activeDb.length;
   const allActiveFindings = [...activeGithub, ...activeWeb, ...activeContainer, ...activeDb];
+
+  // ✨ CALCULATE LIVE TREND BADGES
+  const totalTrend = generateTrendBadge(scanHistory.total, totalIssues);
+  const sastTrend = generateTrendBadge(scanHistory.sast, activeGithub.length);
+  const dastTrend = generateTrendBadge(scanHistory.dast, activeWeb.length);
+  const containerTrend = generateTrendBadge(scanHistory.container, activeContainer.length);
+  const dbTrend = generateTrendBadge(scanHistory.db, activeDb.length, true);
 
   // ==========================================
   // ⚖️ GRC COMPLIANCE ENGINE
@@ -381,11 +597,19 @@ function App() {
   const githubChartData = getSeverityData(activeGithub);
   const webChartData = getSeverityData(activeWeb);
   const containerChartData = getSeverityData(activeContainer);
-  const dbChartData = getSeverityData(activeDb);
+  const dbChartData = getSeverityData(activeDb);  
+  // ✨ NEW: Global Severity Data for the Doughnut Chart
+  const globalSeverityData = [
+    { name: 'Critical', value: allActiveFindings.filter(f => f.Severity?.toUpperCase() === 'CRITICAL' || f.Severity?.toUpperCase() === 'HIGH').length, color: '#f43f5e' },
+    { name: 'High', value: allActiveFindings.filter(f => f.Severity?.toUpperCase() === 'HIGH' && f.Severity !== 'CRITICAL').length, color: '#f97316' },
+    { name: 'Medium', value: allActiveFindings.filter(f => f.Severity?.toUpperCase() === 'MEDIUM').length, color: '#eab308' },
+    { name: 'Low', value: allActiveFindings.filter(f => f.Severity?.toUpperCase() === 'LOW').length, color: '#3b82f6' },
+  ].filter(d => d.value > 0);
 
   const handleResetEngine = () => {
-    setGithubFindings([]); setWebFindings([]); setContainerFindings([]); setIgnoredIds([]);
+    setGithubFindings([]); setWebFindings([]); setRegistryFindings([]); setDockerfileFindings([]); setIgnoredIds([]);
     setAiTriageData({}); 
+    setResolvedFindings([]);
     setChatHistories({}); 
     setPocData({});
     localStorage.clear();
@@ -484,42 +708,90 @@ function App() {
   };
 
   const runScan = async (type, endpoint, payload) => {
-    if (scanState.isActive) return; 
-    setCurrentPage(1); 
-    notify('info', `Initializing ${type.toUpperCase()} deep scan...`);
-    
-    const estTime = type === 'web' ? 45 : 25; 
-    setScanState({ isActive: true, type, progress: 0, elapsed: 0, estimatedTotal: estTime, phase: 'Warming up engine...' });
+    if (scanState.isActive) return;
+
+    // Determine the exact target being scanned so we don't mix up different repos/images
+    let currentTarget = '';
+    if (type === 'github') currentTarget = payload.repo;
+    if (type === 'web') currentTarget = payload.target;
+    if (type === 'container') currentTarget = payload.image;
+    if (type === 'dockerfile') currentTarget = 'raw_dockerfile_input';
+
+    notify('info', `Initializing ${type.toUpperCase()} scan...`);
+    setScanState({ isActive: true, type, progress: 0, phase: 'Engine warming up...' });
 
     scanTimerRef.current = setInterval(() => {
-      setScanState(prev => {
-        const newElapsed = prev.elapsed + 1;
-        const newProgress = Math.min(95, Math.floor((newElapsed / prev.estimatedTotal) * 100));
-        let phase = prev.phase;
-        if (newProgress > 10) phase = type === 'github' ? 'Cloning repository...' : type === 'web' ? 'Resolving target host...' : 'Pulling container layer...';
-        if (newProgress > 40) phase = type === 'github' ? 'Extracting AST & Secrets...' : type === 'web' ? 'Spidering endpoints...' : 'Scanning CVE databases...';
-        if (newProgress > 70) phase = 'Analyzing heuristics...';
-        if (newProgress > 85) phase = 'Compiling security report...';
-        return { ...prev, elapsed: newElapsed, progress: newProgress, phase };
-      });
-    }, 1000);
+      setScanState(prev => ({
+        ...prev,
+        progress: Math.min(95, prev.progress + 2),
+        phase: 'Active Analysis...'
+      }));
+    }, 800);
 
     try {
       const response = await axios.post(`http://localhost:5000/api/scan/${endpoint}`, payload);
+      
       clearInterval(scanTimerRef.current);
       setScanState(prev => ({ ...prev, progress: 100, phase: 'Generating report...' }));
-      
+
       setTimeout(() => {
-        setScanState({ isActive: false, type: null, progress: 0, elapsed: 0, estimatedTotal: 0, phase: '' });
-        if (type === 'github') setGithubFindings(response.data.findings);
-        if (type === 'web') setWebFindings(response.data.findings);
-        if (type === 'container' || type === 'dockerfile') setContainerFindings(response.data.findings);
-        notify('success', `${type.toUpperCase()} scan completed. Found ${response.data.findings.length} issues.`);
-      }, 800);
+        const incoming = response.data.findings || [];
+
+        // ✨ NEW: AUTO-RESOLVER LOGIC ✨
+        const isSameTarget = lastTargetsRef.current[type] === currentTarget;
+        lastTargetsRef.current[type] = currentTarget;
+
+        let oldFindings = [];
+        if (type === 'github') oldFindings = githubFindings;
+        if (type === 'web') oldFindings = webFindings;
+        if (type === 'container') oldFindings = registryFindings;
+        if (type === 'dockerfile') oldFindings = dockerfileFindings;
+
+        // If scanning the same target again, check for missing bugs (they were fixed!)
+        if (isSameTarget && oldFindings.length > 0) {
+          const fixedBugs = oldFindings.filter(oldBug => 
+            !incoming.some(newBug => newBug.Issue === oldBug.Issue)
+          );
+
+          if (fixedBugs.length > 0) {
+            const newlyResolved = fixedBugs.map(bug => ({
+              ...bug,
+              resolvedAt: new Date().toLocaleString(),
+              resolvedBy: 'Auto-Scanner System',
+              status: 'Remediated (Solved)',
+              origin: type.toUpperCase(),
+              File: bug.File || currentTarget
+            }));
+            
+            setResolvedFindings(prev => [...newlyResolved, ...prev]);
+            logToLedger('system', 'AUTO-VERIFIED FIX', `${fixedBugs.length} issues cleared on ${currentTarget}`);
+            notify('success', `Auto-Scan Verified: ${fixedBugs.length} vulnerabilities have been resolved.`);
+          }
+        }
+
+        // ✨ NEW: Snapshot the old history before updating
+        setScanHistory(prev => ({
+          ...prev, 
+          total: totalIssues,
+          sast: type === 'github' ? oldFindings.length : prev.sast,
+          dast: type === 'web' ? oldFindings.length : prev.dast,
+          container: (type === 'container' || type === 'dockerfile') ? oldFindings.length : prev.container
+        }));
+
+        // Update correct bucket with new active findings
+        if (type === 'github') setGithubFindings(incoming);
+        if (type === 'web') setWebFindings(incoming);
+        if (type === 'container') setRegistryFindings(incoming);
+        if (type === 'dockerfile') setDockerfileFindings(incoming);
+
+        setScanState({ isActive: false, type: null, progress: 0, phase: '' });
+        notify('success', `Scan complete: Found ${incoming.length} active threats.`);
+      }, 1000);
+
     } catch (error) {
       clearInterval(scanTimerRef.current);
-      setScanState({ isActive: false, type: null, progress: 0, elapsed: 0, estimatedTotal: 0, phase: '' });
-      notify('error', `Scan failed: ${error.message}`);
+      setScanState({ isActive: false, type: null, progress: 0, phase: '' });
+      notify('error', 'The scan engine failed to respond.');
     }
   };
 
@@ -544,7 +816,34 @@ function App() {
       if (data.status === 'beta') {
         setDbBetaMessage(data.message);
       } else if (data.findings) {
-        setDbFindings(data.findings);
+        const incoming = data.findings;
+        
+        // ✨ THE TARGET LOCK FOR DB
+        const currentDbTarget = `${dbConfig.host}:${dbConfig.port}`;
+        const isNewDbTarget = lastTargetsRef.current.db !== currentDbTarget;
+        lastTargetsRef.current.db = currentDbTarget;
+
+        // Compare Database Config Deltas ONLY if it's the same database
+        if (!isNewDbTarget) {
+          const fixed = dbFindings.filter(oldBug => 
+            !incoming.some(newBug => newBug.Issue === oldBug.Issue)
+          );
+
+          if (fixed.length > 0) {
+            const newlyResolved = fixed.map(bug => ({
+              ...bug,
+              resolvedAt: new Date().toLocaleString(),
+              resolvedBy: userRole,
+              status: 'Remediated',
+              origin: 'Database Infrastructure'
+            }));
+            setResolvedFindings(prev => [...newlyResolved, ...prev]);
+            logToLedger(userRole, 'INFRASTRUCTURE HARDENED', `${fixed.length} misconfigurations corrected.`);
+            notify('success', `Security Update: ${fixed.length} DB policies corrected.`);
+          }
+        }
+        setScanHistory(prev => ({ ...prev, total: totalIssues, db: dbFindings.length }));
+        setDbFindings(incoming);
       } else if (data.error) {
         alert(`Connection Error: ${data.error}`);
       }
@@ -638,18 +937,47 @@ function App() {
     }
     setAiLoading(false);
   };
+  const handleRedTeamChat = async (input) => {
+    if (!input.trim() || !aiModal) return;
+    
+    const issueId = aiModal.Issue;
+    const currentHistory = redTeamHistory[issueId] || [];
+    const userMsg = { role: 'user', content: input };
+    const updatedHistory = [...currentHistory, userMsg];
+    
+    setRedTeamHistory(prev => ({ ...prev, [issueId]: updatedHistory }));
+    setRedTeamLoading(true);
+
+    try {
+      const response = await axios.post('http://localhost:5000/api/ai/redteam/chat', { 
+        finding: aiModal, 
+        history: updatedHistory 
+      });
+      
+      const finalHistory = [...updatedHistory, { role: 'assistant', content: response.data.reply }];
+      setRedTeamHistory(prev => ({ ...prev, [issueId]: finalHistory }));
+    } catch (error) {
+      notify('error', 'RedTeam transmission failed.');
+    }
+    setRedTeamLoading(false);
+  };
 
   const handleClearChat = (issueName) => {
     const updatedHistories = { ...chatHistories };
     delete updatedHistories[issueName];
     setChatHistories(updatedHistories);
     
+    // ✨ ADD THIS LINE BELOW
+    const updatedRedTeam = { ...redTeamHistory };
+    delete updatedRedTeam[issueName];
+    setRedTeamHistory(updatedRedTeam);
+    
     const updatedPoc = { ...pocData };
     delete updatedPoc[issueName];
     setPocData(updatedPoc);
     
     setAiModal(null);
-    notify('info', 'Chat & Exploit history discarded.');
+    notify('info', 'All AI context discarded for this issue.');
   };
 
   const generatePoC = async (finding) => {
@@ -701,17 +1029,21 @@ function App() {
 
   const renderProgressBar = (scanType) => {
     if (!scanState.isActive || scanState.type !== scanType) return null;
-    const remaining = Math.max(0, scanState.estimatedTotal - scanState.elapsed);
+    
     return (
-      <div className="w-full bg-zinc-900 border border-indigo-500/30 rounded-lg p-4 mt-4 relative overflow-hidden shadow-lg z-20">
-        <div className="absolute top-0 left-0 h-1 bg-indigo-500 transition-all duration-500 ease-out" style={{ width: `${scanState.progress}%` }} />
-        <div className="flex justify-between items-center mb-2">
-          <span className="text-sm font-bold text-indigo-400 flex items-center gap-2"><Activity size={14} className="animate-spin" /> {scanState.phase}</span>
-          <span className="text-xs font-mono text-zinc-400">{scanState.progress}%</span>
-        </div>
-        <div className="flex justify-between items-center text-xs text-zinc-500 font-mono mt-2">
-          <span className="flex items-center gap-1"><Clock size={12}/> Elapsed: {formatTime(scanState.elapsed)}</span>
-          <span className="flex items-center gap-1">Remaining: ~{formatTime(remaining)}</span>
+      <div className="w-full bg-zinc-950 border border-indigo-500/20 rounded-xl p-5 mt-4 relative overflow-hidden shadow-2xl z-20">
+        {/* The Actual Moving Bar */}
+        <div 
+          className="absolute top-0 left-0 h-1 bg-gradient-to-r from-indigo-500 to-cyan-400 transition-all duration-500 ease-out" 
+          style={{ width: `${scanState.progress}%` }} 
+        />
+        
+        <div className="flex justify-between items-center">
+          <div className="flex items-center gap-2">
+            <Activity size={14} className="text-indigo-400 animate-pulse" />
+            <span className="text-[10px] font-black text-indigo-100 uppercase tracking-widest">{scanState.phase}</span>
+          </div>
+          <span className="text-xs font-bold text-indigo-400">{scanState.progress}%</span>
         </div>
       </div>
     );
@@ -741,7 +1073,6 @@ function App() {
               </button>
             ))}
           </div>
-
           <button 
             onClick={() => runAiTriage(processedFindings)}
             disabled={isAiTriaging || processedFindings.length === 0}
@@ -763,14 +1094,17 @@ function App() {
               const hasChatHistory = !!chatHistories[f.Issue];
 
               return (
-                <motion.div key={idx} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: idx * 0.05 }} className="group relative bg-zinc-900/60 backdrop-blur-md hover:bg-zinc-800/80 p-5 rounded-lg border border-zinc-800 flex flex-col md:flex-row justify-between items-start md:items-center gap-6 transition-colors overflow-hidden">
-                  <div className={`absolute left-0 top-0 bottom-0 w-1 ${f.Severity === 'Critical' || f.Severity === 'High' ? 'bg-rose-500' : f.Severity === 'Medium' ? 'bg-amber-500' : 'bg-blue-500'}`} />
-                  <div className="flex flex-col gap-2 flex-1 pl-2">
+                <motion.div key={idx} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: idx * 0.05 }} className={`group relative bg-zinc-900/60 backdrop-blur-md hover:bg-zinc-800/80 p-5 rounded-lg border border-zinc-800 flex flex-col md:flex-row justify-between items-start md:items-center gap-6 transition-colors ${reviewingIssue === f.Issue ? 'z-[100]' : 'z-10'}`}>
+                  <div className={`absolute left-0 top-0 bottom-0 w-1 rounded-l-lg ${f.Severity === 'Critical' || f.Severity === 'High' ? 'bg-rose-500' : f.Severity === 'Medium' ? 'bg-amber-500' : 'bg-blue-500'}`} />
+                  
+                  {/* ✨ FIX: Added 'min-w-0' and 'w-full' so this left side allows its children to wrap instead of expanding infinitely */}
+                  <div className="flex flex-col gap-2 flex-1 min-w-0 pl-2 w-full">
                     <div className="flex items-center gap-3">
                       <span className={`px-2.5 py-0.5 text-[10px] font-bold uppercase rounded-sm border flex items-center gap-1.5 w-max ${getSeverityStyles(f.Severity)}`}>{f.Severity || 'UNKNOWN'}</span>
                       <span className="text-zinc-500 text-xs font-mono">{f.Type || 'Vulnerability'}</span>
                     </div>
-                    <h4 className="text-base font-semibold text-zinc-100 font-mono tracking-tight">{f.Issue}</h4>
+                    {/* ✨ FIX: Added 'truncate' to stop massive vulnerability titles from breaking the grid */}
+                    <h4 className="text-base font-semibold text-zinc-100 font-mono tracking-tight truncate">{f.Issue}</h4>
                     
                     {f.appliedRuleName && (
                       <div className="flex items-center gap-2 mt-1.5 mb-2">
@@ -792,11 +1126,14 @@ function App() {
                       </div>
                     )}
                     
-                    <code className="text-[10px] text-zinc-400 bg-zinc-950 px-2 py-1 rounded border border-zinc-800 w-max font-mono uppercase tracking-widest">
+                    {/* ✨ FIX: Removed 'w-max'. Added 'whitespace-normal break-words block w-full'. This forces the text to drop to a new line. */}
+                    <code className="text-[10px] text-zinc-400 bg-zinc-950 px-3 py-2 rounded border border-zinc-800 font-mono uppercase tracking-widest whitespace-normal break-words block w-full mt-1">
                       {f.Fix}
                     </code>
                   </div>
-                  <div className="flex items-center gap-2 flex-shrink-0 w-full md:w-auto">
+                  
+                  {/* ✨ FIX: Added 'justify-end' to keep buttons flush right */}
+                  <div className="flex items-center justify-end gap-2 flex-shrink-0 w-full md:w-auto mt-2 md:mt-0">
                     {hasChatHistory ? (
                       <button onClick={() => getAiFix(f)} className="flex-1 md:flex-none inline-flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-md text-sm font-semibold transition-all shadow-[0_0_10px_rgba(99,102,241,0.4)]">
                         <TerminalSquare size={14} /> Resume Chat
@@ -806,7 +1143,78 @@ function App() {
                         <Sparkles size={14} /> Auto-Fix
                       </button>
                     )}
-                    <button onClick={() => { setIgnoredIds([...ignoredIds, f.Issue]); notify('info', 'Issue dismissed.'); }} className="p-2 text-zinc-500 hover:bg-rose-500/10 hover:text-rose-400 rounded-md transition-colors" title="Dismiss"><Trash2 size={16} /></button>
+                    
+                    {/* ✨ SMART ROLE-AWARE DISMISSAL BUTTONS */}
+                    <div className="relative flex items-center">
+                      {pendingDismissals[f.Issue] ? (
+                        userRole === 'admin' ? (
+                          <div className="relative">
+                            <button
+                              onClick={() => setReviewingIssue(reviewingIssue === f.Issue ? null : f.Issue)}
+                              className={`px-3 py-1.5 border rounded-md text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5 transition-all ${reviewingIssue === f.Issue ? 'bg-amber-500/20 text-amber-400 border-amber-500/50 shadow-[0_0_15px_rgba(245,158,11,0.2)]' : 'bg-amber-500/10 text-amber-500 border-amber-500/30 hover:bg-amber-500/20'}`}
+                            >
+                              <ShieldAlert size={14} className={reviewingIssue === f.Issue ? '' : 'animate-pulse'} /> Review Request
+                            </button>
+
+                            {/* ✨ INLINE APPROVE/DENY POPOVER */}
+                            <AnimatePresence>
+                              {reviewingIssue === f.Issue && (
+                                <motion.div
+                                  initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                                  exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                                  className="absolute right-0 bottom-full mb-3 w-72 bg-[#050505] border border-amber-500/30 rounded-xl shadow-[0_15px_40px_-5px_rgba(0,0,0,0.8)] p-4 z-50 origin-bottom-right"
+                                >
+                                  <p className="text-[10px] text-zinc-400 uppercase tracking-widest mb-3 border-b border-zinc-800 pb-2">
+                                    Requested by <span className="text-amber-400 font-bold">{pendingDismissals[f.Issue].requester}</span> • {pendingDismissals[f.Issue].timestamp}
+                                  </p>
+                                  <div className="flex gap-2">
+                                    <button onClick={() => { handleApproveDismissal(f.Issue); setReviewingIssue(null); }} className="flex-1 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 rounded-lg py-2.5 text-[10px] font-bold uppercase tracking-widest flex items-center justify-center gap-1.5 transition-all">
+                                      <CheckCircle size={14} /> Approve
+                                    </button>
+                                    <button onClick={() => { handleDenyDismissal(f.Issue); setReviewingIssue(null); }} className="flex-1 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 rounded-lg py-2.5 text-[10px] font-bold uppercase tracking-widest flex items-center justify-center gap-1.5 transition-all">
+                                      <XCircle size={14} /> Deny
+                                    </button>
+                                  </div>
+                                  <div className="absolute -bottom-2 right-6 w-4 h-4 bg-[#050505] border-b border-r border-amber-500/30 transform rotate-45"></div>
+                                </motion.div>
+                              )}
+                            </AnimatePresence>
+                          </div>
+                        ) : (
+                          <span className="px-3 py-1.5 bg-amber-500/10 text-amber-500 border border-amber-500/30 rounded-md text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5 shadow-inner whitespace-nowrap">
+                            <Clock size={12} className="animate-spin-slow" /> Pending Admin
+                          </span>
+                        )
+                      ) : userRole === 'admin' ? (
+                        <button 
+                          onClick={() => { 
+                            setIgnoredIds([...ignoredIds, f.Issue]); 
+                            logToLedger(userRole, 'FORCE DISMISSED', f.Issue);
+                            
+                            // ✨ NEW: Add to Remediation History as a Force Dismissal
+                            setResolvedFindings(prev => [{
+                              ...f,
+                              resolvedAt: new Date().toLocaleString(),
+                              resolvedBy: userRole,
+                              status: 'Risk Accepted (Dismissed)',
+                              origin: 'Admin Force Override',
+                              File: f.File || 'System Exception'
+                            }, ...prev]);
+                            
+                            notify('info', 'Issue forcefully dismissed and logged to History.'); 
+                          }} 
+                          className="p-2 text-zinc-500 hover:bg-rose-500/10 hover:text-rose-400 rounded-md transition-colors flex-shrink-0" 
+                          title="Force Dismiss (Admin)"
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      ) : userRole === 'developer' ? (
+                        <button onClick={() => handleRequestDismissal(f.Issue)} className="p-2 text-zinc-500 hover:bg-amber-500/10 hover:text-amber-400 rounded-md transition-colors flex-shrink-0" title="Request Exception">
+                          <ShieldAlert size={16} />
+                        </button>
+                      ) : null}
+                    </div>
                   </div>
                 </motion.div>
               );
@@ -852,8 +1260,85 @@ function App() {
     );
   };
 
+
+  // ✨ THE LOCKSCREEN INTERCEPTOR
+  if (!isAuthenticated) {
+    return (
+      <motion.div 
+        className="fixed inset-0 z-[9999] min-h-screen bg-[#020202] flex items-center justify-center p-4 font-sans selection:bg-emerald-500/30 text-zinc-200"
+        animate={isUnlocking ? { opacity: 0, scale: 1.1, filter: "blur(10px)" } : { opacity: 1, scale: 1, filter: "blur(0px)" }}
+        transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
+      >
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-emerald-900/20 via-[#020202] to-[#020202]"></div>
+        
+        <motion.div 
+          initial={{ opacity: 0, y: 20 }} 
+          animate={{ opacity: 1, y: 0 }} 
+          className="w-full max-w-md min-w-[320px] sm:min-w-[400px] relative z-10" /* ✨ Added min-w to permanently fix the shrinking bug! */
+        >
+          <div className="text-center mb-8">
+            <div className="inline-flex items-center justify-center p-3 bg-zinc-900 border border-zinc-800 rounded-2xl mb-4 shadow-2xl shadow-emerald-900/20">
+              <Shield size={32} className="text-emerald-500" />
+            </div>
+            <h1 className="text-3xl font-black text-white tracking-tighter uppercase">Nexus<span className="text-emerald-500">Sec</span></h1>
+            <p className="text-zinc-500 text-sm mt-2 tracking-widest uppercase font-semibold">Enterprise IAM Gateway</p>
+          </div>
+
+          <form onSubmit={handleLogin} className="bg-zinc-900/50 backdrop-blur-xl border border-zinc-800 rounded-2xl p-6 shadow-2xl">
+            {loginError && (
+              <div className="bg-rose-500/10 border border-rose-500/50 text-rose-400 text-xs px-4 py-3 rounded-lg mb-6 flex items-center gap-2 font-semibold">
+                <AlertTriangle size={14} /> {loginError}
+              </div>
+            )}
+
+            <div className="mb-5">
+              <label className="text-[11px] text-zinc-500 font-bold uppercase tracking-widest mb-2 block">Select Role Profile</label>
+              <div className="relative">
+                <User className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500" size={16} />
+                <select 
+                  value={loginForm.role}
+                  onChange={(e) => setLoginForm({...loginForm, role: e.target.value})}
+                  className="w-full bg-[#050505] border border-zinc-800 rounded-lg py-3 pl-12 pr-4 text-sm text-zinc-200 outline-none focus:border-emerald-500/50 appearance-none cursor-pointer"
+                >
+                  <option value="admin">DevSecOps Admin (Full Access)</option>
+                  <option value="developer">Developer (Scope-Limited)</option>
+                  <option value="auditor">Compliance Auditor (Read-Only)</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="mb-6">
+              <label className="text-[11px] text-zinc-500 font-bold uppercase tracking-widest mb-2 block">Authentication Key</label>
+              <div className="relative">
+                <Key className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500" size={16} />
+                <input 
+                  type="password" 
+                  placeholder="Enter your password..." 
+                  value={loginForm.password}
+                  onChange={(e) => setLoginForm({...loginForm, password: e.target.value})}
+                  className="w-full bg-[#050505] border border-zinc-800 rounded-lg py-3 pl-12 pr-4 text-sm text-zinc-200 outline-none focus:border-emerald-500/50"
+                />
+              </div>
+            </div>
+
+            <button type="submit" className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-3.5 rounded-lg flex items-center justify-center gap-2 transition-colors text-sm tracking-widest uppercase shadow-lg shadow-emerald-900/20 whitespace-nowrap">
+              <Lock size={16} /> Authenticate Session
+            </button>
+
+            
+          </form>
+        </motion.div>
+      </motion.div>
+    );
+  }
+
   return (
-    <div className="flex h-screen bg-[#09090b] text-zinc-200 font-sans selection:bg-indigo-500/30 relative">
+    <motion.div 
+      initial={{ opacity: 0 }} 
+      animate={{ opacity: 1 }} 
+      transition={{ duration: 0.8, delay: 0.2 }} 
+      className="flex h-screen bg-[#09090b] text-zinc-200 font-sans selection:bg-indigo-500/30 relative"
+    >
       
       <MatrixBackground />
       
@@ -888,7 +1373,6 @@ function App() {
         <nav className="flex-1 px-4 space-y-2 overflow-x-hidden">
           {isSidebarOpen && <p className="text-[10px] font-semibold text-zinc-600 uppercase tracking-wider mb-3 ml-2">Overview</p>}
           {renderSidebarItem('Dashboard', LayoutGrid)}
-          
           {renderSidebarItem('Compliance & GRC', Scale)}
           
           {isSidebarOpen && <p className="text-[10px] font-semibold text-zinc-600 uppercase tracking-wider mb-3 mt-8 ml-2">Scanners</p>}
@@ -958,6 +1442,12 @@ function App() {
               </AnimatePresence>
             </div>
             <div className="h-4 w-px bg-zinc-800"></div>
+            
+            {/* ✨ NEW LOGOUT BUTTON */}
+            <button onClick={handleLogout} className="text-zinc-500 hover:text-rose-400 transition-colors" title="Logout Session">
+              <LogOut size={18} />
+            </button>
+            
             <div className="h-8 w-8 rounded-full bg-indigo-500 flex items-center justify-center text-xs font-bold text-white border border-indigo-400">MV</div>
           </div>
         </header>
@@ -971,31 +1461,248 @@ function App() {
                   <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 mb-8 relative z-30">
                     <div><h2 className="text-2xl font-bold text-white tracking-tight">Security Posture</h2><p className="text-sm text-zinc-500 mt-1">Real-time vulnerability analytics across your infrastructure.</p></div>
                     
-                    <div className="relative" onMouseEnter={() => setIsExportHovered(true)} onMouseLeave={() => setIsExportHovered(false)}>
-                      <button className="inline-flex items-center justify-center gap-2 bg-zinc-900 hover:bg-zinc-800 text-white border border-zinc-700 px-4 py-2 rounded-md text-sm font-medium transition-all shadow-lg">
-                        <Download size={16} /> Export Report
+                    {/* ✨ UPGRADED EXPORT BUTTON & RICH DROPDOWN */}
+                    <div className="relative z-50" onMouseEnter={() => setIsExportHovered(true)} onMouseLeave={() => setIsExportHovered(false)}>
+                      <button className="group relative inline-flex items-center justify-center gap-2 bg-zinc-900/80 backdrop-blur-md text-white border border-zinc-700/50 hover:border-indigo-500/50 px-5 py-2.5 rounded-lg text-sm font-bold tracking-wide transition-all shadow-xl overflow-hidden">
+                        {/* Shimmer Effect */}
+                        <div className="absolute inset-0 bg-gradient-to-r from-indigo-500/0 via-indigo-500/10 to-indigo-500/0 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-1000" />
+                        
+                        <Download size={16} className="text-indigo-400 group-hover:-translate-y-0.5 transition-transform" />
+                        <span>Export Report</span>
+                        <ChevronDown size={14} className="text-zinc-500 group-hover:text-zinc-300 ml-1 transition-colors" />
                       </button>
+                      
                       <AnimatePresence>
                         {isExportHovered && (
-                          <motion.div initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 5 }} className="absolute right-0 mt-1 w-56 bg-zinc-900 border border-zinc-700 rounded-lg shadow-2xl z-50 overflow-hidden pt-1 pb-1">
-                            <button onClick={() => downloadReport('all')} className="w-full px-4 py-2.5 text-sm text-zinc-300 hover:bg-indigo-500/20 hover:text-indigo-300 text-left flex items-center gap-3 transition-colors"><FileText size={14}/> Executive Summary</button>
-                            <button onClick={() => downloadReport('sast')} className="w-full px-4 py-2.5 text-sm text-zinc-300 hover:bg-indigo-500/20 hover:text-indigo-300 text-left flex items-center gap-3 transition-colors"><Code2 size={14}/> SAST Code Report</button>
-                            <button onClick={() => downloadReport('dast')} className="w-full px-4 py-2.5 text-sm text-zinc-300 hover:bg-indigo-500/20 hover:text-indigo-300 text-left flex items-center gap-3 transition-colors"><Globe size={14}/> DAST Web Report</button>
-                            <button onClick={() => downloadReport('container')} className="w-full px-4 py-2.5 text-sm text-zinc-300 hover:bg-indigo-500/20 hover:text-indigo-300 text-left flex items-center gap-3 transition-colors"><Server size={14}/> Container Report</button>
-                            <button onClick={() => downloadReport('db')} className="w-full px-4 py-2.5 text-sm text-zinc-300 hover:bg-indigo-500/20 hover:text-indigo-300 text-left flex items-center gap-3 transition-colors"><Database size={14}/> Database Report</button>
+                          <motion.div 
+                            initial={{ opacity: 0, y: 10, scale: 0.95 }} 
+                            animate={{ opacity: 1, y: 0, scale: 1 }} 
+                            exit={{ opacity: 0, y: 10, scale: 0.95 }} 
+                            transition={{ duration: 0.2, ease: "easeOut" }}
+                            className="absolute right-0 mt-2 w-72 bg-zinc-900/90 backdrop-blur-xl border border-zinc-700/50 rounded-xl shadow-[0_20px_40px_rgba(0,0,0,0.4)] overflow-hidden"
+                          >
+                            <div className="p-2 space-y-1">
+                              <div className="px-3 py-2 border-b border-zinc-800/60 mb-1">
+                                <p className="text-[10px] font-black tracking-widest text-zinc-500 uppercase">Generate Audit Artifacts</p>
+                              </div>
+
+                              <button onClick={() => downloadReport('all')} className="w-full p-3 text-left rounded-lg hover:bg-indigo-500/10 group transition-all flex items-start gap-3">
+                                <div className="bg-zinc-800 group-hover:bg-indigo-500/20 p-2 rounded-md transition-colors"><FileText size={16} className="text-zinc-400 group-hover:text-indigo-400"/></div>
+                                <div><p className="text-sm font-bold text-zinc-200 group-hover:text-indigo-300">Executive Summary</p><p className="text-[10px] text-zinc-500 mt-0.5">High-level risk overview for stakeholders</p></div>
+                              </button>
+
+                              <button onClick={() => downloadReport('sast')} className="w-full p-3 text-left rounded-lg hover:bg-indigo-500/10 group transition-all flex items-start gap-3">
+                                <div className="bg-zinc-800 group-hover:bg-indigo-500/20 p-2 rounded-md transition-colors"><Code2 size={16} className="text-zinc-400 group-hover:text-indigo-400"/></div>
+                                <div><p className="text-sm font-bold text-zinc-200 group-hover:text-indigo-300">SAST Code Report</p><p className="text-[10px] text-zinc-500 mt-0.5">Static analysis & hardcoded secret findings</p></div>
+                              </button>
+
+                              <button onClick={() => downloadReport('dast')} className="w-full p-3 text-left rounded-lg hover:bg-violet-500/10 group transition-all flex items-start gap-3">
+                                <div className="bg-zinc-800 group-hover:bg-violet-500/20 p-2 rounded-md transition-colors"><Globe size={16} className="text-zinc-400 group-hover:text-violet-400"/></div>
+                                <div><p className="text-sm font-bold text-zinc-200 group-hover:text-violet-300">DAST Web Report</p><p className="text-[10px] text-zinc-500 mt-0.5">Dynamic payload results & network vulnerabilities</p></div>
+                              </button>
+
+                              <div className="border-t border-zinc-800/60 my-1"></div>
+
+                              <button onClick={() => downloadReport('container')} className="w-full p-3 text-left rounded-lg hover:bg-cyan-500/10 group transition-all flex items-start gap-3">
+                                <div className="bg-zinc-800 group-hover:bg-cyan-500/20 p-2 rounded-md transition-colors"><Server size={16} className="text-zinc-400 group-hover:text-cyan-400"/></div>
+                                <div><p className="text-sm font-bold text-zinc-200 group-hover:text-cyan-300">Container Report</p><p className="text-[10px] text-zinc-500 mt-0.5">Image layer CVEs & Dockerfile misconfigs</p></div>
+                              </button>
+
+                              <button onClick={() => downloadReport('db')} className="w-full p-3 text-left rounded-lg hover:bg-emerald-500/10 group transition-all flex items-start gap-3">
+                                <div className="bg-zinc-800 group-hover:bg-emerald-500/20 p-2 rounded-md transition-colors"><Database size={16} className="text-zinc-400 group-hover:text-emerald-400"/></div>
+                                <div><p className="text-sm font-bold text-zinc-200 group-hover:text-emerald-300">Database Report</p><p className="text-[10px] text-zinc-500 mt-0.5">Infrastructure access & policy audit</p></div>
+                              </button>
+                            </div>
                           </motion.div>
                         )}
                       </AnimatePresence>
                     </div>
                   </div>
-                  
-                  <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-6 relative z-20">
-                    <div className="bg-gradient-to-br from-rose-500/10 to-zinc-900/60 backdrop-blur-md border border-rose-500/20 p-5 rounded-xl"><div className="flex items-center justify-between mb-4"><p className="text-xs font-semibold text-rose-500/70 uppercase">Total Threats</p><AlertTriangle size={16} className="text-rose-500/50"/></div><p className="text-3xl font-bold text-rose-100">{totalIssues}</p></div>
-                    <div className="bg-gradient-to-br from-indigo-500/10 to-zinc-900/60 backdrop-blur-md border border-indigo-500/20 p-5 rounded-xl"><div className="flex items-center justify-between mb-4"><p className="text-xs font-semibold text-indigo-500/70 uppercase">Codebase</p><Code2 size={16} className="text-indigo-500/50"/></div><p className="text-3xl font-bold text-indigo-100">{activeGithub.length}</p></div>
-                    <div className="bg-gradient-to-br from-violet-500/10 to-zinc-900/60 backdrop-blur-md border border-violet-500/20 p-5 rounded-xl"><div className="flex items-center justify-between mb-4"><p className="text-xs font-semibold text-violet-500/70 uppercase">Runtime Web</p><Globe size={16} className="text-violet-500/50"/></div><p className="text-3xl font-bold text-violet-100">{activeWeb.length}</p></div>
-                    <div className="bg-gradient-to-br from-cyan-500/10 to-zinc-900/60 backdrop-blur-md border border-cyan-500/20 p-5 rounded-xl"><div className="flex items-center justify-between mb-4"><p className="text-xs font-semibold text-cyan-500/70 uppercase">Containers</p><Server size={16} className="text-cyan-500/50"/></div><p className="text-3xl font-bold text-cyan-100">{activeContainer.length}</p></div>
-                    <div className="bg-gradient-to-br from-emerald-500/10 to-zinc-900/60 backdrop-blur-md border border-emerald-500/20 p-5 rounded-xl"><div className="flex items-center justify-between mb-4"><p className="text-xs font-semibold text-emerald-500/70 uppercase">Databases</p><Database size={16} className="text-emerald-500/50"/></div><p className="text-3xl font-bold text-emerald-100">{activeDb.length}</p></div>
+
+                  {/* ✨ UPGRADED KPI CARDS WITH HOVER GLOWS & TRENDS */}
+                  <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-8 relative z-20">
+                    
+                    <div className="group bg-gradient-to-br from-rose-500/10 to-zinc-900/80 backdrop-blur-xl border border-rose-500/20 p-5 rounded-2xl transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_8px_30px_rgba(244,63,94,0.15)] overflow-hidden relative">
+                      <div className="absolute -right-4 -top-4 w-24 h-24 bg-rose-500/10 rounded-full blur-2xl group-hover:bg-rose-500/20 transition-all"></div>
+                      <div className="flex items-center justify-between mb-2 relative z-10"><p className="text-[10px] font-black tracking-widest text-rose-500/80 uppercase">Total Threats</p><AlertTriangle size={14} className="text-rose-500/50"/></div>
+                      <p className="text-4xl font-black text-rose-100 relative z-10 tracking-tighter">{totalIssues}</p>
+                      <div className={`mt-3 flex items-center gap-1.5 text-[10px] font-bold w-max px-2 py-1 rounded border relative z-10 ${totalTrend.color === 'rose' ? 'text-rose-400 bg-rose-500/10 border-rose-500/20' : totalTrend.color === 'emerald' ? 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20' : totalTrend.color === 'amber' ? 'text-amber-400 bg-amber-500/10 border-amber-500/20' : 'text-zinc-400 bg-zinc-800 border-zinc-700'}`}>
+                        <totalTrend.icon size={10}/> {totalTrend.text}
+                      </div>
+                    </div>
+                    
+                    <div className="group bg-gradient-to-br from-indigo-500/10 to-zinc-900/80 backdrop-blur-xl border border-indigo-500/20 p-5 rounded-2xl transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_8px_30px_rgba(99,102,241,0.15)] overflow-hidden relative">
+                      <div className="absolute -right-4 -top-4 w-24 h-24 bg-indigo-500/10 rounded-full blur-2xl group-hover:bg-indigo-500/20 transition-all"></div>
+                      <div className="flex items-center justify-between mb-2 relative z-10"><p className="text-[10px] font-black tracking-widest text-indigo-400/80 uppercase">Codebase (SAST)</p><Code2 size={14} className="text-indigo-400/50"/></div>
+                      <p className="text-4xl font-black text-indigo-100 relative z-10 tracking-tighter">{activeGithub.length}</p>
+                      <div className={`mt-3 flex items-center gap-1.5 text-[10px] font-bold w-max px-2 py-1 rounded border relative z-10 ${sastTrend.color === 'rose' ? 'text-rose-400 bg-rose-500/10 border-rose-500/20' : sastTrend.color === 'emerald' ? 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20' : sastTrend.color === 'amber' ? 'text-amber-400 bg-amber-500/10 border-amber-500/20' : 'text-zinc-400 bg-zinc-800 border-zinc-700'}`}>
+                        <sastTrend.icon size={10}/> {sastTrend.text}
+                      </div>
+                    </div>
+
+                    <div className="group bg-gradient-to-br from-violet-500/10 to-zinc-900/80 backdrop-blur-xl border border-violet-500/20 p-5 rounded-2xl transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_8px_30px_rgba(139,92,246,0.15)] overflow-hidden relative">
+                      <div className="absolute -right-4 -top-4 w-24 h-24 bg-violet-500/10 rounded-full blur-2xl group-hover:bg-violet-500/20 transition-all"></div>
+                      <div className="flex items-center justify-between mb-2 relative z-10"><p className="text-[10px] font-black tracking-widest text-violet-400/80 uppercase">Runtime (DAST)</p><Globe size={14} className="text-violet-400/50"/></div>
+                      <p className="text-4xl font-black text-violet-100 relative z-10 tracking-tighter">{activeWeb.length}</p>
+                      <div className={`mt-3 flex items-center gap-1.5 text-[10px] font-bold w-max px-2 py-1 rounded border relative z-10 ${dastTrend.color === 'rose' ? 'text-rose-400 bg-rose-500/10 border-rose-500/20' : dastTrend.color === 'emerald' ? 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20' : dastTrend.color === 'amber' ? 'text-amber-400 bg-amber-500/10 border-amber-500/20' : 'text-zinc-400 bg-zinc-800 border-zinc-700'}`}>
+                        <dastTrend.icon size={10}/> {dastTrend.text}
+                      </div>
+                    </div>
+
+                    <div className="group bg-gradient-to-br from-cyan-500/10 to-zinc-900/80 backdrop-blur-xl border border-cyan-500/20 p-5 rounded-2xl transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_8px_30px_rgba(6,182,212,0.15)] overflow-hidden relative">
+                      <div className="absolute -right-4 -top-4 w-24 h-24 bg-cyan-500/10 rounded-full blur-2xl group-hover:bg-cyan-500/20 transition-all"></div>
+                      <div className="flex items-center justify-between mb-2 relative z-10"><p className="text-[10px] font-black tracking-widest text-cyan-400/80 uppercase">Containers</p><Server size={14} className="text-cyan-400/50"/></div>
+                      <p className="text-4xl font-black text-cyan-100 relative z-10 tracking-tighter">{activeContainer.length}</p>
+                      <div className={`mt-3 flex items-center gap-1.5 text-[10px] font-bold w-max px-2 py-1 rounded border relative z-10 ${containerTrend.color === 'rose' ? 'text-rose-400 bg-rose-500/10 border-rose-500/20' : containerTrend.color === 'emerald' ? 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20' : containerTrend.color === 'amber' ? 'text-amber-400 bg-amber-500/10 border-amber-500/20' : 'text-zinc-400 bg-zinc-800 border-zinc-700'}`}>
+                        <containerTrend.icon size={10}/> {containerTrend.text}
+                      </div>
+                    </div>
+
+                    <div className="group bg-gradient-to-br from-emerald-500/10 to-zinc-900/80 backdrop-blur-xl border border-emerald-500/20 p-5 rounded-2xl transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_8px_30px_rgba(16,185,129,0.15)] overflow-hidden relative">
+                      <div className="absolute -right-4 -top-4 w-24 h-24 bg-emerald-500/10 rounded-full blur-2xl group-hover:bg-emerald-500/20 transition-all"></div>
+                      <div className="flex items-center justify-between mb-2 relative z-10"><p className="text-[10px] font-black tracking-widest text-emerald-400/80 uppercase">Databases</p><Database size={14} className="text-emerald-400/50"/></div>
+                      <p className="text-4xl font-black text-emerald-100 relative z-10 tracking-tighter">{activeDb.length}</p>
+                      <div className={`mt-3 flex items-center gap-1.5 text-[10px] font-bold w-max px-2 py-1 rounded border relative z-10 ${dbTrend.color === 'rose' ? 'text-rose-400 bg-rose-500/10 border-rose-500/20' : dbTrend.color === 'emerald' ? 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20' : dbTrend.color === 'amber' ? 'text-amber-400 bg-amber-500/10 border-amber-500/20' : 'text-zinc-400 bg-zinc-800 border-zinc-700'}`}>
+                        <dbTrend.icon size={10}/> {dbTrend.text}
+                      </div>
+                    </div>
                   </div>
+
+                  {/* ✨ UPGRADED SOC DASHBOARD ROW */}
+                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 relative z-20 mb-8">
+                    
+                    {/* 1. The Glowing Doughnut Chart */}
+                    <div className="bg-zinc-900/60 backdrop-blur-xl border border-zinc-800/80 rounded-2xl p-6 flex flex-col h-[380px] shadow-xl relative overflow-hidden group">
+                      <div className="absolute inset-0 bg-gradient-to-b from-transparent to-indigo-900/5 pointer-events-none"></div>
+                      <h3 className="text-xs font-black tracking-widest text-zinc-300 mb-6 uppercase flex items-center gap-2"><Activity size={14} className="text-indigo-500"/> Global Severity Spread</h3>
+                      
+                      <div className="flex-1 relative">
+                        {globalSeverityData.length > 0 ? (
+                          <>
+                            <ResponsiveContainer width="100%" height="100%">
+                              <PieChart>
+                                <Pie 
+                                  data={globalSeverityData} 
+                                  innerRadius="65%" 
+                                  outerRadius="90%" 
+                                  paddingAngle={4} 
+                                  dataKey="value"
+                                  stroke="none"
+                                >
+                                  {globalSeverityData.map((entry, index) => (
+                                    <Cell key={`cell-${index}`} fill={entry.color} style={{ filter: `drop-shadow(0px 0px 8px ${entry.color}40)` }} />
+                                  ))}
+                                </Pie>
+                                <Tooltip 
+                                  contentStyle={{ backgroundColor: '#09090b', borderColor: '#27272a', borderRadius: '12px', padding: '12px', boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.5)' }} 
+                                  itemStyle={{ color: '#e4e4e7', fontSize: '13px', fontWeight: 'bold' }} 
+                                />
+                              </PieChart>
+                            </ResponsiveContainer>
+                            <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                              <span className="text-4xl font-black text-white tracking-tighter">{totalIssues}</span>
+                              <span className="text-[10px] uppercase tracking-widest text-zinc-500 font-bold mt-1">Total Found</span>
+                            </div>
+                          </>
+                        ) : (
+                          <div className="w-full h-full flex flex-col items-center justify-center text-zinc-600">
+                            <ShieldCheck size={40} className="mb-3 opacity-20" />
+                            <span className="text-xs font-bold uppercase tracking-widest">Zero Threats Detected</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* 2. The Live Threat Feed (Takes up 2 columns) */}
+                    <div className="lg:col-span-2 bg-zinc-900/60 backdrop-blur-xl border border-zinc-800/80 rounded-2xl p-6 flex flex-col h-[380px] shadow-xl">
+                      <div className="flex items-center justify-between mb-6 border-b border-zinc-800/60 pb-4">
+                        <h3 className="text-xs font-black tracking-widest text-zinc-300 uppercase flex items-center gap-2">
+                          <TerminalSquare size={14} className="text-rose-500"/> Live Threat Telemetry
+                        </h3>
+                        <span className="flex items-center gap-1.5 text-[9px] font-black uppercase tracking-widest bg-rose-500/10 text-rose-500 border border-rose-500/20 px-2 py-1 rounded shadow-[0_0_10px_rgba(244,63,94,0.2)]">
+                          <span className="w-1.5 h-1.5 bg-rose-500 rounded-full animate-ping mr-1"></span> Live Monitoring
+                        </span>
+                      </div>
+                      
+                      <div className="flex-1 overflow-y-auto pr-2 space-y-2.5 custom-scrollbar">
+                        {allActiveFindings.length === 0 ? (
+                           <div className="h-full flex items-center justify-center text-zinc-600 text-sm font-mono">
+                             > Awaiting incoming telemetry payload...
+                           </div>
+                        ) : (
+                          allActiveFindings.slice(0, 15).map((f, i) => (
+                            <div key={i} className="flex items-start gap-4 p-3 bg-zinc-950/50 hover:bg-zinc-800/50 border border-zinc-800/50 rounded-lg transition-colors group">
+                              <span className={`mt-0.5 px-2 py-0.5 text-[9px] font-black uppercase tracking-widest rounded border flex-shrink-0 w-20 text-center ${f.Severity === 'Critical' || f.Severity === 'High' ? 'bg-rose-500/10 text-rose-400 border-rose-500/20' : f.Severity === 'Medium' ? 'bg-amber-500/10 text-amber-400 border-amber-500/20' : 'bg-blue-500/10 text-blue-400 border-blue-500/20'}`}>
+                                {f.Severity}
+                              </span>
+                              <div className="flex-1 min-w-0">
+                                <p className="text-xs font-bold text-zinc-200 font-mono truncate group-hover:text-indigo-300 transition-colors">{f.Issue}</p>
+                                <p className="text-[10px] text-zinc-500 uppercase tracking-widest mt-1 truncate">{f.Type} | <span className="text-zinc-600">Engine: NexusSec Core</span></p>
+                              </div>
+                              <span className="text-[10px] text-zinc-600 font-mono whitespace-nowrap">Just Now</span>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="mt-8 bg-zinc-900/60 backdrop-blur-xl border border-emerald-500/20 rounded-2xl p-6 shadow-xl relative z-20">
+              <div className="flex items-center justify-between mb-6 border-b border-zinc-800/60 pb-4">
+                <div className="flex items-center gap-3">
+                  <div className="bg-emerald-500/10 p-2 rounded-lg">
+                    <CheckCircle size={18} className="text-emerald-500"/>
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-black text-zinc-200 uppercase tracking-widest">Remediation History</h3>
+                    <p className="text-[10px] text-zinc-500 font-mono mt-0.5">Verified resolutions across all security modules.</p>
+                  </div>
+                </div>
+                <span className="text-[9px] font-black uppercase tracking-widest bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 px-2 py-1 rounded shadow-[0_0_10px_rgba(16,185,129,0.1)]">
+                  Compliance Validated
+                </span>
+              </div>
+
+              <div className="max-h-80 overflow-y-auto pr-2 space-y-3 custom-scrollbar">
+                {resolvedFindings.length === 0 ? (
+                  <div className="h-32 flex flex-col items-center justify-center text-zinc-700 border border-dashed border-zinc-800 rounded-xl">
+                    <ShieldCheck size={24} className="mb-2 opacity-20" />
+                    <span className="text-[10px] uppercase font-bold tracking-widest">No verified remediations yet.</span>
+                  </div>
+                ) : (
+                  resolvedFindings.map((f, i) => (
+                    <div key={i} className="flex items-center justify-between p-4 bg-emerald-500/5 border border-emerald-500/10 rounded-xl group hover:border-emerald-500/30 transition-all">
+                      <div className="flex items-center gap-4">
+                        <div className="flex flex-col items-center">
+                          <div className="p-2 bg-emerald-500/20 rounded-full mb-1">
+                            <ShieldCheck size={14} className="text-emerald-400" />
+                          </div>
+                          <span className="text-[7px] text-emerald-600 font-black uppercase">Fixed</span>
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <p className="text-xs font-bold text-emerald-100 font-mono">{f.Issue}</p>
+                            <span className="text-[8px] bg-zinc-800 text-zinc-400 px-1.5 py-0.5 rounded border border-zinc-700 font-bold uppercase">
+                              {f.origin}
+                            </span>
+                          </div>
+                          <p className="text-[10px] text-zinc-500 mt-1">
+                            Resolved in: <span className="text-zinc-400 font-mono">{f.File || 'Infrastructure'}</span> • Verified by: <span className="text-indigo-400 font-bold uppercase">{f.resolvedBy}</span>
+                          </p>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-[10px] text-emerald-500/70 font-mono font-bold">{f.resolvedAt}</p>
+                        <div className="mt-1 flex items-center gap-1 justify-end">
+                          <div className="w-1 h-1 bg-emerald-500 rounded-full animate-pulse"></div>
+                          <p className="text-[8px] text-zinc-500 uppercase font-black tracking-tighter italic">Ledger Entry #{i + 1001}</p>
+                        </div>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
 
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                     {renderChart('SAST Code Distribution', <Code2 className="text-indigo-400" size={16}/>, githubChartData)}
@@ -1008,13 +1715,102 @@ function App() {
 
               {/* ✨ NEW COMPLIANCE & GRC PAGE */}
               {activeTab === 'Compliance & GRC' && (
-                <motion.div key="grc" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}>
+                <motion.div key="grc" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className={`relative ${userRole === 'developer' ? 'h-[80vh] overflow-hidden' : 'min-h-[80vh]'}`}>
+                  {/* ✨ RBAC: GRC LOCKED FOR DEVELOPERS */}
+                  {userRole === 'developer' && (
+                    <div className="absolute inset-0 z-[999] backdrop-blur-md bg-[#09090b]/60 rounded-xl flex flex-col items-center justify-center text-center border border-rose-500/20 shadow-2xl overflow-hidden">
+                      <div className="absolute inset-0 bg-[repeating-linear-gradient(45deg,transparent,transparent_10px,rgba(244,63,94,0.05)_10px,rgba(244,63,94,0.05)_20px)] pointer-events-none" />
+                      <div className="bg-rose-500/10 p-5 rounded-full mb-6 relative z-10 border border-rose-500/20">
+                         <div className="absolute inset-0 bg-rose-500/20 rounded-full animate-ping opacity-50"></div>
+                         <Lock size={40} className="text-rose-500 relative z-10" />
+                      </div>
+                      <h3 className="text-2xl font-black text-white uppercase tracking-widest mb-3 relative z-10">Clearance Required</h3>
+                      <p className="text-zinc-300 text-sm max-w-md mb-8 leading-relaxed relative z-10">
+                        Your <strong className="text-rose-400">Developer</strong> profile is restricted from viewing production governance metrics to enforce strict Separation of Duties (SoD).
+                      </p>
+                      <button onClick={() => setActiveTab('Dashboard')} className="bg-zinc-900 border border-zinc-700 hover:bg-zinc-800 text-white px-6 py-3 rounded-lg text-xs font-bold uppercase tracking-widest transition-all flex items-center gap-2 shadow-xl relative z-10"><ChevronLeft size={16} /> Return to Dashboard</button>
+                    </div>
+                  )}
                   <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 mb-8 relative z-30">
                     <div>
                       <h2 className="text-2xl font-bold text-white tracking-tight">Governance, Risk & Compliance</h2>
                       <p className="text-sm text-zinc-500 mt-1">Translating technical vulnerabilities into business risk and audit readiness.</p>
                     </div>
                   </div>
+
+                  {/* ✨ AUDITOR ONLY: TOGGLEABLE LEDGER ✨ */}
+                  {userRole === 'auditor' && (
+                    <div className="mb-8 relative z-20">
+                      <button
+                        onClick={() => setShowLedger(!showLedger)}
+                        className={`flex items-center gap-2 px-5 py-2.5 rounded-lg text-xs font-bold uppercase tracking-widest transition-all border ${showLedger ? 'bg-indigo-500/20 text-indigo-300 border-indigo-500/50 shadow-[0_0_15px_rgba(99,102,241,0.2)]' : 'bg-zinc-900 border-zinc-700 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200 shadow-lg'}`}
+                      >
+                        <BookOpen size={16} />
+                        {showLedger ? 'Close Compliance Ledger' : 'View Compliance Ledger'}
+                      </button>
+
+                      <AnimatePresence>
+                        {showLedger && (
+                          <motion.div
+                            initial={{ opacity: 0, height: 0, marginTop: 0 }}
+                            animate={{ opacity: 1, height: 'auto', marginTop: 16 }}
+                            exit={{ opacity: 0, height: 0, marginTop: 0 }}
+                            className="overflow-hidden"
+                          >
+                            <div className="bg-zinc-900/60 backdrop-blur-xl border border-indigo-500/20 rounded-2xl p-6 shadow-xl relative">
+                              <div className="absolute inset-0 bg-gradient-to-b from-transparent to-indigo-900/5 pointer-events-none rounded-2xl"></div>
+                              <div className="flex items-center gap-3 mb-6 border-b border-zinc-800/60 pb-4 relative z-10">
+                                <div className="bg-indigo-500/10 p-2 rounded-lg border border-indigo-500/20">
+                                  <BookOpen size={20} className="text-indigo-400" />
+                                </div>
+                                <div>
+                                  <h3 className="text-sm font-black text-zinc-200 uppercase tracking-widest flex items-center gap-2">
+                                    Immutable Compliance Ledger <ShieldCheck size={14} className="text-emerald-500"/>
+                                  </h3>
+                                  <p className="text-[10px] text-zinc-500 font-mono mt-0.5">Cryptographically secure audit trail of all platform authorizations.</p>
+                                </div>
+                              </div>
+
+                              <div className="bg-[#050505] rounded-xl border border-zinc-800/80 overflow-hidden relative z-10 max-h-[300px] overflow-y-auto custom-scrollbar">
+                                {auditTrail.length === 0 ? (
+                                  <div className="p-8 text-center text-zinc-600 text-xs font-mono">No compliance events recorded yet.</div>
+                                ) : (
+                                  <table className="w-full text-left border-collapse">
+                                    <thead className="bg-zinc-900/80 text-[9px] uppercase tracking-widest text-zinc-500 border-b border-zinc-800">
+                                      <tr>
+                                        <th className="p-4 font-bold">Timestamp</th>
+                                        <th className="p-4 font-bold">Actor</th>
+                                        <th className="p-4 font-bold">Action</th>
+                                        <th className="p-4 font-bold">Target Asset / CVE</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody className="text-xs font-mono text-zinc-300">
+                                      {auditTrail.map((entry) => (
+                                        <tr key={entry.id} className="border-b border-zinc-800/50 hover:bg-zinc-800/20 transition-colors">
+                                          <td className="p-4 text-zinc-500">{entry.timestamp}</td>
+                                          <td className="p-4">
+                                            <span className={`px-2 py-1 rounded text-[9px] font-black uppercase tracking-widest border ${entry.actor === 'admin' ? 'bg-rose-500/10 text-rose-400 border-rose-500/20' : 'bg-blue-500/10 text-blue-400 border-blue-500/20'}`}>
+                                              {entry.actor}
+                                            </span>
+                                          </td>
+                                          <td className="p-4">
+                                            <span className={`${entry.action.includes('APPROVED') ? 'text-emerald-400' : entry.action.includes('DENIED') ? 'text-rose-400' : 'text-amber-400'} font-bold`}>
+                                              {entry.action}
+                                            </span>
+                                          </td>
+                                          <td className="p-4 truncate max-w-[200px] text-zinc-400">{entry.target}</td>
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                  </table>
+                                )}
+                              </div>
+                            </div>
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
+                    </div>
+                  )}
 
                   {/* Top KPI Cards */}
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6 relative z-[100]">
@@ -1123,6 +1919,14 @@ function App() {
                           allActiveFindings.slice(0, 8).map((finding, idx) => {
                             const issueLower = (finding.Issue + " " + finding.Type).toLowerCase();
                             
+                            // ✨ NEW LOGIC: Identify which scanner found this bug
+                            let sourceTab = 'Dashboard';
+                            let sourceLabel = 'Unknown';
+                            if (activeGithub.some(f => f.Issue === finding.Issue)) { sourceTab = 'Source Audit'; sourceLabel = 'SAST Engine'; }
+                            else if (activeWeb.some(f => f.Issue === finding.Issue)) { sourceTab = 'Penetration Test'; sourceLabel = 'DAST Engine'; }
+                            else if (activeContainer.some(f => f.Issue === finding.Issue)) { sourceTab = 'Container Security'; sourceLabel = 'Container Ops'; }
+                            else if (activeDb.some(f => f.Issue === finding.Issue)) { sourceTab = 'Database Security'; sourceLabel = 'DB Audit'; }
+
                             // 1. Framework Logic
                             let framework = "OWASP Top 10";
                             let frameworkColor = "text-blue-400 bg-blue-500/10 border-blue-500/20";
@@ -1180,9 +1984,23 @@ function App() {
                                 
                                 <p className="text-sm text-zinc-100 font-bold tracking-tight">{businessImpact}</p>
                                 
-                                <div className="flex items-center gap-2">
-                                  <Code2 size={12} className="text-zinc-600" />
-                                  <p className="text-[10px] text-zinc-500 font-mono truncate" title={finding.Issue}>{finding.Issue}</p>
+                                {/* ✨ UPGRADED ISSUE ROW WITH ADMIN REDIRECT BUTTON ✨ */}
+                                <div className="flex items-center justify-between gap-3 mt-1">
+                                  <div className="flex items-center gap-2 min-w-0">
+                                    <Code2 size={12} className="text-zinc-600 shrink-0" />
+                                    <p className="text-[10px] text-zinc-500 font-mono truncate" title={finding.Issue}>{finding.Issue}</p>
+                                  </div>
+                                  
+                                  {/* Render Button ONLY if user is Admin */}
+                                  {userRole === 'admin' && (
+                                    <button
+                                      onClick={() => setActiveTab(sourceTab)}
+                                      className="shrink-0 flex items-center gap-1 bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 border border-indigo-500/30 px-2 py-1.5 rounded text-[8px] font-black uppercase tracking-widest transition-all shadow-sm group"
+                                      title={`Investigate in ${sourceTab}`}
+                                    >
+                                      {sourceLabel} <ChevronRight size={10} className="group-hover:translate-x-0.5 transition-transform" />
+                                    </button>
+                                  )}
                                 </div>
                                 
                                 <p className="text-xs text-zinc-400 line-clamp-2 mt-2 leading-relaxed bg-zinc-900/50 p-2 rounded border border-zinc-800/50">
@@ -1200,7 +2018,22 @@ function App() {
 
               {/* SOURCE AUDIT PAGE */}
               {activeTab === 'Source Audit' && (
-                <motion.div key="source" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}>
+                <motion.div key="source" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className={`relative ${userRole === 'auditor' ? 'h-[80vh] overflow-hidden' : 'min-h-[80vh]'}`}>
+                  {/* ✨ RBAC: ENTIRE PAGE LOCKED FOR AUDITORS ✨ */}
+                  {userRole === 'auditor' && (
+                    <div className="absolute inset-0 z-[999] backdrop-blur-md bg-[#09090b]/60 rounded-xl flex flex-col items-center justify-center text-center border border-indigo-500/20 shadow-2xl overflow-hidden">
+                      <div className="absolute inset-0 bg-[repeating-linear-gradient(45deg,transparent,transparent_10px,rgba(99,102,241,0.05)_10px,rgba(99,102,241,0.05)_20px)] pointer-events-none" />
+                      <div className="bg-indigo-500/10 p-5 rounded-full mb-6 relative z-10 border border-indigo-500/20">
+                         <div className="absolute inset-0 bg-indigo-500/20 rounded-full animate-ping opacity-50"></div>
+                         <ShieldCheck size={40} className="text-indigo-500 relative z-10" />
+                      </div>
+                      <h3 className="text-2xl font-black text-white uppercase tracking-widest mb-3 relative z-10">Clearance Required</h3>
+                      <p className="text-zinc-300 text-sm max-w-md mb-8 leading-relaxed relative z-10">
+                        Your <strong className="text-indigo-400">Auditor</strong> profile restricts access to active scanning execution and raw source code environments. Please review aggregated risk metrics on the Dashboard.
+                      </p>
+                      <button onClick={() => setActiveTab('Dashboard')} className="bg-zinc-900 border border-zinc-700 hover:bg-zinc-800 text-white px-6 py-3 rounded-lg text-xs font-bold uppercase tracking-widest transition-all flex items-center gap-2 shadow-xl relative z-10"><ChevronLeft size={16} /> Return to Dashboard</button>
+                    </div>
+                  )}
                   <div className="mb-8 relative z-20"><h2 className="text-2xl font-bold text-white tracking-tight">Static Application Security Testing</h2><p className="text-sm text-zinc-500 mt-1">Scan source code repositories for secrets and vulnerabilities.</p></div>
                   {!githubToken ? (
                     <div className="bg-zinc-900/60 backdrop-blur-md border border-zinc-800 border-dashed rounded-xl p-12 flex flex-col items-center justify-center text-center relative z-20">
@@ -1209,13 +2042,22 @@ function App() {
                       <div className="w-full max-w-xl border-t border-zinc-800 pt-8 flex flex-col gap-3">
                         <div className="flex gap-3">
                           <div className="relative flex-1"><Code2 className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" size={16}/><input type="text" value={repo} onChange={(e) => setRepo(e.target.value)} placeholder="Or paste public repo URL..." className="w-full bg-[#09090b] border border-zinc-800 rounded-md py-2 pl-10 pr-4 text-sm text-zinc-200 outline-none transition-all" /></div>
-                          <button onClick={() => runScan('github', 'github', { repo })} disabled={scanState.isActive} className="inline-flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white px-6 py-2 rounded-md text-sm font-medium transition-all disabled:opacity-50">{scanState.isActive && scanState.type === 'github' ? <Activity size={16} className="animate-spin" /> : "Run Scan"}</button>
+                          <button onClick={() => runScan('github', 'github', { repo })} disabled={scanState.isActive || userRole === 'auditor'} className="inline-flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white px-6 py-2 rounded-md text-sm font-medium transition-all disabled:opacity-50">{scanState.isActive && scanState.type === 'github' ? <Activity size={16} className="animate-spin" /> : "Run Scan"}</button>
                         </div>
                         {renderProgressBar('github')}
                       </div>
                     </div>
                   ) : (
-                    <div className="bg-zinc-900/60 backdrop-blur-md border border-zinc-800 rounded-xl p-6 flex flex-col gap-4 relative z-20">
+                    <div className="bg-zinc-900/60 backdrop-blur-md border border-zinc-800 rounded-xl p-6 flex flex-col gap-4 relative z-20 overflow-hidden">
+                      {/* ✨ CARD BLOCK: AUDITOR READ-ONLY */}
+                      {userRole === 'auditor' && (
+                        <div className="absolute inset-0 z-[100] backdrop-blur-md bg-[#09090b]/80 flex flex-col items-center justify-center text-center border border-indigo-500/20">
+                          <ShieldCheck size={32} className="text-indigo-500 mb-2" />
+                          <h3 className="text-base font-black text-white uppercase tracking-widest mb-1">Execution Locked</h3>
+                          <p className="text-zinc-400 text-[10px] uppercase tracking-widest">Read-Only Auditor Profile</p>
+                        </div>
+                      )}
+
                       <div className="flex items-center justify-between border-b border-zinc-800 pb-4">
                         <div className="flex items-center gap-4"><div className="bg-indigo-500/20 p-2.5 rounded-lg"><Github className="text-indigo-400" size={20}/></div><div><p className="text-white text-sm font-semibold">GitHub Connected</p><p className="text-zinc-500 text-xs">{userRepos.length} Repositories sync'd</p></div></div>
                         <button onClick={handleGithubLogout} className="p-2 text-zinc-500 hover:text-rose-400 hover:bg-rose-500/10 rounded-md transition-colors"><LogOut size={16}/></button>
@@ -1223,7 +2065,7 @@ function App() {
                       <div className="flex flex-col gap-3">
                         <div className="flex gap-3">
                           <select value={repo} onChange={(e) => setRepo(e.target.value)} className="flex-1 bg-[#09090b] border border-zinc-800 rounded-md py-2 px-3 text-sm text-zinc-200 outline-none">{userRepos.map((r, i) => <option key={i} value={r}>{r}</option>)}</select>
-                          <button onClick={() => runScan('github', 'github', { repo, token: githubToken })} disabled={scanState.isActive} className="inline-flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white px-6 py-2 rounded-md text-sm font-medium transition-all whitespace-nowrap disabled:opacity-50">Run SAST</button>
+                          <button onClick={() => runScan('github', 'github', { repo, token: githubToken })} disabled={scanState.isActive || userRole === 'auditor'} className="inline-flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white px-6 py-2 rounded-md text-sm font-medium transition-all whitespace-nowrap disabled:opacity-50">Run SAST</button>
                         </div>
                         {renderProgressBar('github')}
                       </div>
@@ -1235,7 +2077,22 @@ function App() {
 
               {/* PENETRATION TEST PAGE */}
               {activeTab === 'Penetration Test' && (
-                <motion.div key="web" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="relative">
+                <motion.div key="web" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className={`relative ${(!dastWarningAccepted || userRole === 'auditor') ? 'h-[80vh] overflow-hidden' : 'min-h-[80vh]'}`}>
+                  {/* ✨ RBAC: ENTIRE PAGE LOCKED FOR AUDITORS ✨ */}
+                  {userRole === 'auditor' && (
+                    <div className="absolute inset-0 z-[999] backdrop-blur-md bg-[#09090b]/60 rounded-xl flex flex-col items-center justify-center text-center border border-indigo-500/20 shadow-2xl overflow-hidden">
+                      <div className="absolute inset-0 bg-[repeating-linear-gradient(45deg,transparent,transparent_10px,rgba(99,102,241,0.05)_10px,rgba(99,102,241,0.05)_20px)] pointer-events-none" />
+                      <div className="bg-indigo-500/10 p-5 rounded-full mb-6 relative z-10 border border-indigo-500/20">
+                         <div className="absolute inset-0 bg-indigo-500/20 rounded-full animate-ping opacity-50"></div>
+                         <ShieldCheck size={40} className="text-indigo-500 relative z-10" />
+                      </div>
+                      <h3 className="text-2xl font-black text-white uppercase tracking-widest mb-3 relative z-10">Clearance Required</h3>
+                      <p className="text-zinc-300 text-sm max-w-md mb-8 leading-relaxed relative z-10">
+                        Your <strong className="text-indigo-400">Auditor</strong> profile restricts access to active scanning execution and raw source code environments. Please review aggregated risk metrics on the Dashboard.
+                      </p>
+                      <button onClick={() => setActiveTab('Dashboard')} className="bg-zinc-900 border border-zinc-700 hover:bg-zinc-800 text-white px-6 py-3 rounded-lg text-xs font-bold uppercase tracking-widest transition-all flex items-center gap-2 shadow-xl relative z-10"><ChevronLeft size={16} /> Return to Dashboard</button>
+                    </div>
+                  )}
                   
                   {/* ✨ THE ETHICAL USE LOCK SCREEN MODAL */}
                   <AnimatePresence>
@@ -1291,203 +2148,152 @@ function App() {
                     
                     <div className="mb-6 relative z-20 flex flex-col md:flex-row md:items-end justify-between gap-4">
                       <div>
-                        <h2 className="text-2xl font-bold text-white tracking-tight">Dynamic Application Security Testing</h2>
-                        <p className="text-sm text-zinc-500 mt-1">Execute live reconnaissance and exploit simulation on active targets.</p>
+                        <h2 className="text-2xl font-bold text-white tracking-tight flex items-center gap-3">
+                          <Zap size={24} className="text-cyan-400" /> Dynamic Application Security Testing
+                        </h2>
+                        <p className="text-sm text-zinc-500 mt-1 font-mono uppercase tracking-widest">Powered by OWASP ZAP 2.17.0 </p>
                       </div>
                     </div>
 
-                    <div className="flex gap-2 p-1.5 bg-[#09090b] border border-zinc-800 rounded-lg w-max mb-6 relative z-20 shadow-inner">
-                      {['time-limited', 'full'].map((mode) => (
-                        <button
-                          key={mode}
-                          onClick={() => setDastMode(mode)}
-                          className={`relative px-6 py-2 text-sm font-semibold rounded-md transition-colors z-10 ${dastMode === mode ? (mode === 'time-limited' ? 'text-cyan-400' : 'text-rose-400') : 'text-zinc-500 hover:text-zinc-300'}`}
-                        >
-                          {dastMode === mode && (
-                            <motion.div
-                              layoutId="dastModeActive"
-                              className={`absolute inset-0 rounded-md -z-10 ${mode === 'time-limited' ? 'bg-cyan-500/10 border border-cyan-500/30' : 'bg-rose-500/10 border border-rose-500/30'}`}
-                              transition={{ type: "spring", stiffness: 400, damping: 30 }}
-                            />
-                          )}
-                          {mode === 'time-limited' ? 'Time-Boxed Scan' : 'Full Exhaustive DAST'}
-                        </button>
-                      ))}
-                    </div>
-
-                    <div className="bg-zinc-900/60 backdrop-blur-md border border-zinc-800 rounded-xl p-6 relative z-20 overflow-hidden shadow-lg">
-                      
-                      <div className="relative mb-8">
-                        <Globe className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500" size={18}/>
+                    <div className="bg-zinc-900/60 backdrop-blur-md border border-zinc-800 rounded-xl p-6 relative z-20 overflow-hidden shadow-[0_0_30px_rgba(6,182,212,0.05)]">
+                    
+                      <div className="relative mb-6">
+                        <Globe className="absolute left-4 top-1/2 -translate-y-1/2 text-cyan-500" size={18}/>
                         <input 
                           type="text" 
                           value={targetUrl} 
                           onChange={(e) => setTargetUrl(e.target.value)} 
-                          className="w-full h-full bg-[#050505] border border-zinc-800 rounded-lg py-4 pl-12 pr-4 text-sm text-zinc-200 outline-none transition-all focus:border-indigo-500/50 shadow-inner" 
+                          className="w-full h-full bg-[#050505] border border-zinc-800 rounded-lg py-4 pl-12 pr-4 text-sm text-cyan-50 outline-none transition-all focus:border-cyan-500/50 shadow-inner placeholder:text-zinc-700 font-mono" 
                           placeholder="https://target-application.com" 
                         />
                       </div>
 
-                      <AnimatePresence mode="wait">
-                        {dastMode === 'time-limited' ? (
-                          <motion.div key="time-limited" initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }} transition={{ duration: 0.2 }} className="flex flex-col gap-6">
-                            <div className="bg-[#09090b] border border-zinc-800/80 rounded-lg p-5">
-                              <div className="flex items-center gap-2 mb-6">
-                                <Clock size={16} className={dastTimeLimit === 5 ? 'text-cyan-400 transition-colors duration-500' : dastTimeLimit === 15 ? 'text-violet-400 transition-colors duration-500' : 'text-rose-400 transition-colors duration-500'}/>
-                                <h4 className="text-sm font-bold text-zinc-200">Execution Time Limit</h4>
-                              </div>
-                              
-                              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                                {[
-                                  { time: 5, title: 'Surface Recon', desc: 'Fast checks for obvious misconfigurations. Ideal for rapid CI/CD pipeline feedback.', colorCode: '#22d3ee' },
-                                  { time: 15, title: 'Standard Audit', desc: 'Balanced endpoint spidering and vulnerability fuzzing. Best for daily security sanity checks.', colorCode: '#a78bfa' },
-                                  { time: 30, title: 'Deep Assessment', desc: 'Heavy payload injection & exhaustive parameter testing. Best for pre-production staging.', colorCode: '#fb7185' }
-                                ].map((option) => {
-                                  const isActive = dastTimeLimit === option.time;
-
-                                  return (
-                                    <button 
-                                      key={option.time} 
-                                      onClick={() => setDastTimeLimit(option.time)} 
-                                      className="relative flex flex-col items-start p-5 rounded-xl text-left transition-all duration-500 group outline-none"
-                                    >
-                                      {isActive && (
-                                        <motion.div 
-                                          layoutId="activeBorderCrawling"
-                                          className="absolute inset-0 rounded-xl z-10 pointer-events-none"
-                                          initial={false}
-                                          animate={{ borderColor: option.colorCode, boxShadow: `0 0 20px ${option.colorCode}33` }}
-                                          transition={{ type: "spring", stiffness: 300, damping: 30, borderColor: { duration: 0.5 } }}
-                                          style={{ borderWidth: '2px', borderStyle: 'solid' }}
-                                        />
-                                      )}
-
-                                      <div className="mb-2 flex items-center justify-between w-full relative z-20">
-                                        <span className={`text-3xl font-black transition-colors duration-500 ${isActive ? (option.time === 5 ? 'text-cyan-400' : option.time === 15 ? 'text-violet-400' : 'text-rose-400') : 'text-zinc-600'}`}>
-                                          {option.time}
-                                          <span className="text-xs font-semibold ml-1 opacity-70">MIN</span>
-                                        </span>
-                                        {isActive && (
-                                          <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} className="flex-shrink-0">
-                                            <Activity size={16} className={option.time === 5 ? 'text-cyan-400' : option.time === 15 ? 'text-violet-400' : 'text-rose-400'} />
-                                          </motion.div>
-                                        )}
-                                      </div>
-
-                                      <h5 className={`text-xs font-bold uppercase tracking-wider mb-1 relative z-20 transition-colors duration-500 ${isActive ? 'text-zinc-100' : 'text-zinc-500'}`}>{option.title}</h5>
-                                      <p className={`text-[10px] leading-relaxed relative z-20 transition-colors duration-500 ${isActive ? 'text-zinc-400' : 'text-zinc-700'}`}>{option.desc}</p>
-                                      <div className={`absolute inset-0 rounded-xl -z-10 transition-opacity duration-500 ${isActive ? 'opacity-100' : 'opacity-0'} ${option.time === 5 ? 'bg-cyan-500/5' : option.time === 15 ? 'bg-violet-500/5' : 'bg-rose-500/5'}`} />
-                                    </button>
-                                  );
-                                })}
-                              </div>
-                            </div>
-
-                            <button 
-                              onClick={() => runScan('web', 'web', { target: targetUrl, timeLimit: dastTimeLimit, type: 'recon' })} 
-                              disabled={scanState.isActive} 
-                              className={`w-full inline-flex items-center justify-center gap-2 text-white px-4 py-4 rounded-lg text-sm font-black transition-all duration-700 disabled:opacity-50 shadow-lg relative overflow-hidden
-                                ${dastTimeLimit === 5 ? 'bg-cyan-600 hover:bg-cyan-500 shadow-cyan-900/20' : 
-                                  dastTimeLimit === 15 ? 'bg-violet-600 hover:bg-violet-500 shadow-violet-900/20' : 
-                                  'bg-rose-600 hover:bg-rose-500 shadow-rose-900/20'}`}
-                            >
-                              <Zap size={18} className={scanState.isActive ? 'animate-spin' : 'animate-pulse'} /> 
-                              INITIATE {dastTimeLimit}-MINUTE SCAN
-                            </button>
-                          </motion.div>
-
-                        ) : (
-
-                          <motion.div key="full" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} transition={{ duration: 0.2 }} className="flex flex-col gap-6">
-                            <div className="bg-rose-500/5 border border-rose-500/20 rounded-lg p-5">
-                              <div className="flex items-start gap-3">
-                                <AlertTriangle size={20} className="text-rose-500 flex-shrink-0 mt-0.5"/>
-                                <div>
-                                  <h4 className="text-sm font-bold text-rose-400">Deep Attack Vector Warning</h4>
-                                  <p className="text-xs text-zinc-400 mt-1.5 leading-relaxed">
-                                    This scan will execute highly aggressive payloads, including SQL injection, XSS, and CSRF simulations. It is extremely noisy and will continue running until all endpoint permutations are exhausted. Do not run on production databases during peak hours.
-                                  </p>
-                                </div>
-                              </div>
-                            </div>
-
-                            <div className="bg-[#09090b] border border-zinc-800 rounded-lg overflow-hidden transition-colors">
-                              <button 
-                                onClick={() => setShowDastConfig(!showDastConfig)}
-                                className="w-full flex items-center justify-between p-4 text-xs font-bold uppercase tracking-widest text-zinc-400 hover:text-white transition-colors hover:bg-zinc-900/50"
+                      {/* ✨ ZAP FEATURE MATRIX ✨ */}
+                      <div className="mb-6">
+                        <div className="flex items-center gap-2 mb-4">
+                          <LayoutGrid size={16} className="text-cyan-400" />
+                          <h3 className="text-xs font-bold text-zinc-300 uppercase tracking-widest">ZAP Attack Modules</h3>
+                        </div>
+                        
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+                          {[
+                            { id: 'spider', label: 'Standard Spider', icon: Globe, desc: 'Fast endpoint discovery' },
+                            { id: 'ajax', label: 'AJAX Spider', icon: FileCode2, desc: 'Dynamic JS & SPA crawling' },
+                            { id: 'passive', label: 'Passive Scan', icon: Server, desc: 'Header & misconfig analysis' },
+                            { id: 'active', label: 'Active Scan', icon: Bug, desc: 'Deep injection fuzzing (SQLi, XSS)' }
+                          ].map(feature => {
+                            const isActive = zapConfig.features.includes(feature.id);
+                            return (
+                              <button
+                                key={feature.id}
+                                onClick={() => toggleZapFeature(feature.id)}
+                                className={`p-4 rounded-xl border text-left transition-all duration-300 relative overflow-hidden group ${
+                                  isActive 
+                                    ? 'bg-cyan-950/30 border-cyan-500/50 shadow-[0_0_15px_rgba(6,182,212,0.1)]' 
+                                    : 'bg-[#09090b] border-zinc-800 hover:border-zinc-700 opacity-70 hover:opacity-100'
+                                }`}
                               >
-                                <div className="flex items-center gap-2">
-                                  <Box size={14} className={showDastConfig ? 'text-indigo-400' : ''} />
-                                  Engine Configurations
+                                {isActive && <div className="absolute top-0 left-0 w-1 h-full bg-cyan-500 shadow-[0_0_10px_#06b6d4]" />}
+                                <div className="flex items-center justify-between mb-2 relative z-10">
+                                  <feature.icon size={16} className={isActive ? 'text-cyan-400' : 'text-zinc-500'} />
+                                  <div className={`w-2 h-2 rounded-full ${isActive ? 'bg-cyan-400 animate-pulse' : 'bg-zinc-800'}`} />
                                 </div>
-                                <ChevronRight size={14} className={`transition-transform duration-300 ${showDastConfig ? 'rotate-90' : ''}`} />
+                                <h4 className={`text-xs font-bold uppercase tracking-wider mb-1 relative z-10 ${isActive ? 'text-cyan-50' : 'text-zinc-400'}`}>{feature.label}</h4>
+                                <p className={`text-[9px] font-mono relative z-10 ${isActive ? 'text-cyan-500/70' : 'text-zinc-600'}`}>{feature.desc}</p>
                               </button>
+                            );
+                          })}
+                        </div>
+                      </div>
 
-                              <AnimatePresence>
-                                {showDastConfig && (
-                                  <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="border-t border-zinc-800 bg-black/50">
-                                    <div className="p-5 flex flex-col gap-5">
-                                      <div>
-                                        <div className="flex justify-between items-center mb-2">
-                                          <label className="text-[16px] text-zinc-500 font-bold uppercase tracking-widest">Concurrent Threads</label>
-                                          <span className="text-xs font-black text-indigo-400">{dastConfig.concurrency}</span>
-                                        </div>
-                                        <input 
-                                          type="range" min="1" max="50" 
-                                          value={dastConfig.concurrency}
-                                          onChange={(e) => setDastConfig({...dastConfig, concurrency: parseInt(e.target.value)})}
-                                          className="w-full accent-indigo-500"
-                                        />
-                                        <p className="text-[10px] text-zinc-600 uppercase mt-1">Higher values increase speed but risk Denial of Service.</p>
-                                      </div>
+                      {/* ✨ ZAP ENGINE SETTINGS ✨ */}
+                      <div className="bg-[#050505] border border-zinc-800 rounded-xl overflow-hidden transition-colors mb-6">
+                        <button 
+                          onClick={() => setShowZapConfig(!showZapConfig)}
+                          className="w-full flex items-center justify-between p-4 text-xs font-bold uppercase tracking-widest text-zinc-400 hover:text-white transition-colors hover:bg-zinc-900/50"
+                        >
+                          <div className="flex items-center gap-2">
+                            <Sliders size={14} className={showZapConfig ? 'text-cyan-400' : ''} />
+                            Engine & Stealth Parameters
+                          </div>
+                          <ChevronRight size={14} className={`transition-transform duration-300 ${showZapConfig ? 'rotate-90' : ''}`} />
+                        </button>
 
-                                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                        <button 
-                                          onClick={() => setDastConfig({...dastConfig, smartThrottling: !dastConfig.smartThrottling})}
-                                          className={`flex items-center justify-between p-3 rounded border text-left transition-colors ${dastConfig.smartThrottling ? 'bg-indigo-500/10 border-indigo-500/30 text-indigo-400' : 'bg-zinc-900 border-zinc-800 text-zinc-500 hover:border-zinc-700'}`}
-                                        >
-                                          <div><p className="text-[12px] font-bold uppercase tracking-widest">Smart Throttling</p><p className="text-[9px] opacity-90 uppercase mt-0.5">Auto-delay if server lags</p></div>
-                                          <div className={`w-3 h-3 rounded-full ${dastConfig.smartThrottling ? 'bg-indigo-400 shadow-[0_0_10px_#818cf8]' : 'bg-zinc-700'}`} />
-                                        </button>
+                        <AnimatePresence>
+                          {showZapConfig && (
+                            <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="border-t border-zinc-800 bg-zinc-950">
+                              <div className="p-5 flex flex-col gap-6">
+                                
+                                <div>
+                                  <div className="flex justify-between items-center mb-2">
+                                    <label className="text-[10px] text-zinc-500 font-bold uppercase tracking-widest">Active Scan Strength</label>
+                                    <span className="text-xs font-black text-cyan-400 font-mono bg-cyan-950/50 px-2 py-0.5 rounded border border-cyan-500/20">{zapConfig.scanStrength}</span>
+                                  </div>
+                                  <select 
+                                    value={zapConfig.scanStrength}
+                                    onChange={(e) => setZapConfig({...zapConfig, scanStrength: e.target.value})}
+                                    className="w-full bg-[#09090b] border border-zinc-800 rounded-lg py-2 px-3 text-sm text-zinc-200 outline-none focus:border-cyan-500"
+                                  >
+                                    <option value="Low">Low (Fewer Requests)</option>
+                                    <option value="Default">Default (Balanced)</option>
+                                    <option value="High">High (Aggressive)</option>
+                                    <option value="Insane">Insane (Warning: High Load)</option>
+                                  </select>
+                                </div>
 
-                                        <button 
-                                          onClick={() => setDastConfig({...dastConfig, recursiveCrawl: !dastConfig.recursiveCrawl})}
-                                          className={`flex items-center justify-between p-3 rounded border text-left transition-colors ${dastConfig.recursiveCrawl ? 'bg-rose-500/10 border-rose-500/30 text-rose-400' : 'bg-zinc-900 border-zinc-800 text-zinc-500 hover:border-zinc-700'}`}
-                                        >
-                                          <div><p className="text-[12px] font-bold uppercase tracking-widest">Recursive Crawl</p><p className="text-[9px] opacity-90 uppercase mt-0.5">Map every nested directory</p></div>
-                                          <div className={`w-3 h-3 rounded-full ${dastConfig.recursiveCrawl ? 'bg-rose-400 shadow-[0_0_10px_#fb7185]' : 'bg-zinc-700'}`} />
-                                        </button>
-                                      </div>
-
-                                      <div>
-                                        <label className="text-[12px] text-zinc-500 font-bold uppercase tracking-widest mb-2 block">Custom Headers / Auth</label>
-                                        <textarea 
-                                          value={dastConfig.customHeaders}
-                                          onChange={(e) => setDastConfig({...dastConfig, customHeaders: e.target.value})}
-                                          placeholder="Authorization: Bearer token..."
-                                          className="w-full bg-[#050505] border border-zinc-800 rounded p-3 text-xs text-zinc-300 font-mono focus:border-indigo-500 outline-none h-20 resize-none placeholder:text-zinc-700"
-                                        />
-                                      </div>
+                                <div className="grid grid-cols-1">
+                                  <button 
+                                    onClick={() => setZapConfig({...zapConfig, stealthMode: !zapConfig.stealthMode})}
+                                    className={`flex items-center justify-between p-4 rounded-lg border text-left transition-colors ${zapConfig.stealthMode ? 'bg-indigo-950/30 border-indigo-500/50 text-indigo-400' : 'bg-[#09090b] border-zinc-800 text-zinc-500 hover:border-zinc-700'}`}
+                                  >
+                                    <div>
+                                      <p className="text-[10px] font-bold uppercase tracking-widest text-zinc-300">WAF Evasion (Stealth)</p>
+                                      <p className="text-[9px] opacity-70 font-mono mt-1">Add delays between requests to evade basic firewalls</p>
                                     </div>
-                                  </motion.div>
-                                )}
-                              </AnimatePresence>
-                            </div>
+                                    <div className={`w-3 h-3 rounded border ${zapConfig.stealthMode ? 'bg-indigo-400 border-indigo-300 shadow-[0_0_10px_#818cf8]' : 'bg-zinc-900 border-zinc-700'}`} />
+                                  </button>
+                                </div>
 
-                            <button 
-                              onClick={() => runScan('web', 'web', { target: targetUrl, timeLimit: 0, type: 'deep', config: dastConfig })} 
-                              disabled={scanState.isActive} 
-                              className="w-full relative overflow-hidden inline-flex items-center justify-center gap-2 bg-rose-600 hover:bg-rose-500 text-white px-4 py-3.5 rounded-lg text-sm font-bold transition-all disabled:opacity-50 group"
-                            >
-                              <div className="absolute inset-0 bg-[linear-gradient(45deg,transparent_25%,rgba(255,255,255,0.2)_50%,transparent_75%)] bg-[length:250%_250%,100%_100%] bg-[position:200%_0,0_0] bg-no-repeat transition-[background-position_0s_ease] hover:bg-[position:-100%_0,0_0] duration-[1500ms]" />
-                              <Bug size={18} /> Execute Full DAST Sweep
-                            </button>
-                          </motion.div>
+                              </div>
+                            </motion.div>
+                          )}
+                        </AnimatePresence>
+                      </div>
 
-                        )}
-                      </AnimatePresence>
-                      {renderProgressBar('web')}
+                      <button 
+                        onClick={() => runScan('web', 'web', { target: targetUrl, config: zapConfig })} 
+                        disabled={scanState.isActive || userRole === 'auditor'}
+                        className="w-full relative overflow-hidden inline-flex items-center justify-center gap-2 bg-cyan-600 hover:bg-cyan-500 text-zinc-950 px-4 py-4 rounded-xl text-sm font-black tracking-widest transition-all disabled:opacity-50 group shadow-[0_0_20px_rgba(6,182,212,0.3)] hover:shadow-[0_0_30px_rgba(6,182,212,0.5)] uppercase"
+                      >
+                        <div className="absolute inset-0 bg-[linear-gradient(45deg,transparent_25%,rgba(255,255,255,0.3)_50%,transparent_75%)] bg-[length:250%_250%,100%_100%] bg-[position:200%_0,0_0] bg-no-repeat transition-[background-position_0s_ease] group-hover:bg-[position:-100%_0,0_0] duration-[1500ms]" />
+                        <Activity size={18} className={scanState.isActive ? 'animate-spin' : ''} /> 
+                        {scanState.isActive ? 'ZAP ENGINE ACTIVE...' : 'INITIALIZE ZAP ENGINE'}
+                      </button>
                     </div>
+
+                    {/* ✨ ZAP TERMINAL STYLED PROGRESS BAR ✨ */}
+                    {scanState.isActive && scanState.type === 'web' && (
+                      <div className="w-full bg-black border border-cyan-500/30 rounded-xl p-5 mt-4 relative overflow-hidden shadow-[0_0_30px_rgba(6,182,212,0.1)] z-20 font-mono">
+                        <div className="flex items-center justify-between mb-3 border-b border-cyan-900/30 pb-2">
+                          <div className="flex items-center gap-2 text-[10px] font-bold text-cyan-500">
+                            <TerminalSquare size={14} /> proxy@localhost:8080 - target: {targetUrl || 'unknown'}
+                          </div>
+                          <span className="text-[10px] text-cyan-400 font-black">{scanState.progress}%</span>
+                        </div>
+                        
+                        <div className="h-1.5 w-full bg-zinc-900 rounded-full overflow-hidden mb-3">
+                          <div className="h-full bg-cyan-500 shadow-[0_0_10px_#06b6d4] transition-all duration-300" style={{ width: `${scanState.progress}%` }} />
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          <span className="w-1.5 h-1.5 bg-cyan-400 rounded-full animate-ping" />
+                          <p className="text-[10px] text-zinc-400 tracking-wider">
+                            [INF] Proxying traffic... {scanState.phase}
+                          </p>
+                        </div>
+                      </div>
+                    )}
+                    
                     {renderFindingsList(activeWeb)}
                     
                   </div>
@@ -1496,7 +2302,22 @@ function App() {
 
               {/* CONTAINER SECURITY PAGE */}
               {activeTab === 'Container Security' && (
-                <motion.div key="container" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}>
+                <motion.div key="container" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className={`relative ${userRole === 'auditor' ? 'h-[80vh] overflow-hidden' : 'min-h-[80vh]'}`}>
+                  {/* ✨ RBAC: SCANNERS LOCKED FOR AUDITORS */}
+                  {userRole === 'auditor' && (
+                    <div className="absolute inset-0 z-[999] backdrop-blur-md bg-[#09090b]/60 rounded-xl flex flex-col items-center justify-center text-center border border-indigo-500/20 shadow-2xl overflow-hidden">
+                      <div className="absolute inset-0 bg-[repeating-linear-gradient(45deg,tra{userRole === 'auditor' && (nsparent,transparent_10px,rgba(99,102,241,0.05)_10px,rgba(99,102,241,0.05)_20px)] pointer-events-none" />
+                      <div className="bg-indigo-500/10 p-5 rounded-full mb-6 relative z-10 border border-indigo-500/20">
+                         <div className="absolute inset-0 bg-indigo-500/20 rounded-full animate-ping opacity-50"></div>
+                         <ShieldCheck size={40} className="text-indigo-500 relative z-10" />
+                      </div>
+                      <h3 className="text-2xl font-black text-white uppercase tracking-widest mb-3 relative z-10">Clearance Required</h3>
+                      <p className="text-zinc-300 text-sm max-w-md mb-8 leading-relaxed relative z-10">
+                        Your <strong className="text-indigo-400">Auditor</strong> profile restricts access to active scanning execution and raw source code environments. Please review aggregated risk metrics on the Dashboard.
+                      </p>
+                      <button onClick={() => setActiveTab('Dashboard')} className="bg-zinc-900 border border-zinc-700 hover:bg-zinc-800 text-white px-6 py-3 rounded-lg text-xs font-bold uppercase tracking-widest transition-all flex items-center gap-2 shadow-xl relative z-10"><ChevronLeft size={16} /> Return to Dashboard</button>
+                    </div>
+                  )}
                   <div className="mb-6 relative z-20 flex flex-col md:flex-row md:items-end justify-between gap-4">
                     <div>
                       <h2 className="text-2xl font-bold text-white tracking-tight">Container & IaC Security</h2>
@@ -1530,8 +2351,8 @@ function App() {
                           <Box className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500" size={18}/>
                           <input 
                             type="text" 
-                            value={targetUrl} 
-                            onChange={(e) => setTargetUrl(e.target.value)} 
+                            value={containerImage}                                      
+                            onChange={(e) => setContainerImage(e.target.value)} 
                             className="w-full bg-[#050505] border border-zinc-800 rounded-lg py-4 pl-12 pr-4 text-sm text-zinc-200 outline-none transition-all focus:border-indigo-500/50 shadow-inner" 
                             placeholder="e.g., nginx:latest or python:3.9-slim" 
                           />
@@ -1550,39 +2371,85 @@ function App() {
                     </AnimatePresence>
 
                     <button 
-                      onClick={() => {
-                        if (containerScanMode === 'image') {
-                          runScan('container', 'container', { image: targetUrl });
-                        } else {
-                          runScan('dockerfile', 'container', { content: dockerfileContent });
-                        }
-                      }} 
-                      disabled={scanState.isActive} 
-                      className="w-full inline-flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-4 rounded-lg text-sm font-black transition-all duration-300 disabled:opacity-50 shadow-lg shadow-indigo-900/20"
-                    >
-                      <Zap size={18} className={scanState.isActive ? 'animate-spin' : ''} /> 
-                      ANALYZE {containerScanMode === 'image' ? 'IMAGE' : 'DOCKERFILE'}
-                    </button>
-                    
-                    {renderProgressBar('container')}
-                  </div>
-                  {renderFindingsList(activeContainer)}
-                </motion.div>
-              )}
+                    onClick={() => {
+                      // 🛑 1. THE BOUNCER: Check the input first!
+                      const currentInput = containerScanMode === 'image' ? containerImage : dockerfileContent; // ✨ CHANGED THIS
+                      const validationType = containerScanMode === 'image' ? 'registry' : 'raw';
+                      
+                      if (!validateContainerInput(currentInput, validationType)) return;
+
+                      // ✅ 2. THE ROUTING: Call the specific backend endpoint
+                      if (containerScanMode === 'image') {
+                        runScan('container', 'container', { image: containerImage }); // ✨ CHANGED THIS
+                      } else {
+                        runScan('dockerfile', 'dockerfile', { content: dockerfileContent }); 
+                      }
+                    }} 
+                    disabled={scanState.isActive || userRole === 'auditor'}
+                    className="w-full inline-flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-4 rounded-lg text-sm font-black transition-all duration-300 disabled:opacity-50 shadow-lg shadow-indigo-900/20"
+                  >
+                    <Zap size={18} className={scanState.isActive ? 'animate-spin' : ''} /> 
+                    ANALYZE {containerScanMode === 'image' ? 'IMAGE' : 'DOCKERFILE'}
+                  </button>
+                  
+                  {renderProgressBar('container')}
+                </div>
+                
+                {/* ✨ THE SEPARATED RENDER ✨ */}
+                <div className="mt-8">
+                  {containerScanMode === 'image' ? (
+                    <>
+                      <div className="flex items-center gap-2 mb-4 px-1 border-b border-zinc-800 pb-2">
+                        <div className="w-2 h-2 rounded-full bg-cyan-500 animate-pulse" />
+                        <span className="text-[10px] font-black text-cyan-500 uppercase tracking-widest">Live Registry Audit Results</span>
+                      </div>
+                      {renderFindingsList(activeRegistry)} 
+                    </>
+                  ) : (
+                    <>
+                      <div className="flex items-center gap-2 mb-4 px-1 border-b border-zinc-800 pb-2">
+                        <div className="w-2 h-2 rounded-full bg-indigo-500 animate-pulse" />
+                        <span className="text-[10px] font-black text-indigo-500 uppercase tracking-widest">Static Dockerfile Analysis</span>
+                      </div>
+                      {renderFindingsList(activeDockerfile)}
+                    </>
+                  )}
+                </div>
+              </motion.div>
+            )}
 
               {/* DATABASE SECURITY PAGE */}
               {activeTab === 'Database Security' && (
-                <motion.div key="database" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}>
+                <motion.div key="database" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className={`relative ${userRole === 'auditor' ? 'h-[80vh] overflow-hidden' : 'min-h-[80vh]'}`}>
+                  
+                  {/* ✨ RBAC: SCANNERS LOCKED FOR AUDITORS */}
+                  {userRole === 'auditor' && (
+                    <div className="absolute inset-0 z-[999] backdrop-blur-md bg-[#09090b]/60 rounded-xl flex flex-col items-center justify-center text-center border border-emerald-500/20 shadow-2xl overflow-hidden">
+                      <div className="absolute inset-0 bg-[repeating-linear-gradient(45deg,transparent,transparent_10px,rgba(16,185,129,0.05)_10px,rgba(16,185,129,0.05)_20px)] pointer-events-none" />
+                      <div className="bg-emerald-500/10 p-5 rounded-full mb-6 relative z-10 border border-emerald-500/20">
+                         <div className="absolute inset-0 bg-emerald-500/20 rounded-full animate-ping opacity-50"></div>
+                         <ShieldCheck size={40} className="text-emerald-500 relative z-10" />
+                      </div>
+                      <h3 className="text-2xl font-black text-white uppercase tracking-widest mb-3 relative z-10">Clearance Required</h3>
+                      <p className="text-zinc-300 text-sm max-w-md mb-8 leading-relaxed relative z-10">
+                        Your <strong className="text-emerald-400">Auditor</strong> profile restricts access to active infrastructure auditing. Please review aggregated risk metrics on the Dashboard.
+                      </p>
+                      <button onClick={() => setActiveTab('Dashboard')} className="bg-zinc-900 border border-zinc-700 hover:bg-zinc-800 text-white px-6 py-3 rounded-lg text-xs font-bold uppercase tracking-widest transition-all flex items-center gap-2 shadow-xl relative z-10"><ChevronLeft size={16} /> Return to Dashboard</button>
+                    </div>
+                  )}
+
                   <div className="mb-6 relative z-20 flex flex-col md:flex-row md:items-end justify-between gap-4">
                     <div>
-                      <h2 className="text-2xl font-bold text-white tracking-tight">Database Infrastructure Assessment</h2>
+                      <h2 className="text-2xl font-bold text-white tracking-tight flex items-center gap-3">
+                        <Database size={24} className="text-emerald-400" /> Database Infrastructure Assessment
+                      </h2>
                       <p className="text-sm text-zinc-500 mt-1">Audit internal IAM privileges, password policies, and network exposure.</p>
                     </div>
                   </div>
 
                   <div className="bg-zinc-900/60 backdrop-blur-md border border-zinc-800 rounded-xl p-6 relative z-20 overflow-hidden shadow-lg mb-6">
                     
-                    {/* ✨ ENTERPRISE FEATURE LOCK OVERLAY */}
+                    {/* ✨ ENTERPRISE FEATURE LOCK OVERLAY FOR POSTGRES/MSSQL/ORACLE */}
                     <AnimatePresence>
                       {dbConfig.db_type !== 'mysql' && (
                         <motion.div 
@@ -1605,7 +2472,7 @@ function App() {
                             <button 
                               onClick={() => {
                                 setDbConfig(prev => ({...prev, db_type: 'mysql', port: '3306'}));
-                                setDbBetaMessage(null); // Clear the message state just in case
+                                setDbBetaMessage(null);
                               }}
                               className="bg-amber-500 hover:bg-amber-400 text-zinc-950 px-6 py-3 rounded-lg text-sm font-bold uppercase tracking-widest transition-all flex items-center gap-2 shadow-[0_0_15px_rgba(245,158,11,0.3)]"
                             >
@@ -1640,6 +2507,7 @@ function App() {
                       </div>
                     </div>
 
+                    {/* Connection Config Inputs */}
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
                       <div className="relative">
                         <Server className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500" size={16} />
@@ -1661,7 +2529,7 @@ function App() {
 
                     <button 
                       onClick={executeDatabaseScan} 
-                      disabled={scanState.isActive} 
+                      disabled={scanState.isActive || userRole === 'auditor'}
                       className="w-full inline-flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-4 rounded-lg text-sm font-black transition-all duration-300 disabled:opacity-50 shadow-lg shadow-emerald-900/20"
                     >
                       <Database size={18} className={scanState.isActive ? 'animate-bounce' : ''} /> 
@@ -1892,7 +2760,22 @@ function App() {
                   </div>
                 </>
               ) : (
-                <div className="p-6 overflow-y-auto flex-1 bg-[#050505] scrollbar-hide">
+                <div className="p-6 overflow-y-auto flex-1 bg-[#050505] scrollbar-hide relative">
+                  
+                  {/* ✨ GRANULAR RBAC: POC LOCKED FOR DEVELOPERS ✨ */}
+                  {userRole === 'developer' && (
+                    <div className="absolute inset-0 z-[100] backdrop-blur-md bg-[#09090b]/80 flex flex-col items-center justify-center text-center border border-rose-500/20 shadow-2xl">
+                      <div className="absolute inset-0 bg-[repeating-linear-gradient(45deg,transparent,transparent_10px,rgba(244,63,94,0.05)_10px,rgba(244,63,94,0.05)_20px)] pointer-events-none" />
+                      <div className="bg-rose-500/10 p-4 rounded-full mb-4 border border-rose-500/20">
+                         <Lock size={32} className="text-rose-500" />
+                      </div>
+                      <h3 className="text-lg font-black text-white uppercase tracking-widest mb-2">Red Team Clearance Required</h3>
+                      <p className="text-zinc-400 text-xs max-w-sm leading-relaxed px-4">
+                        To prevent accidental detonation and enforce Separation of Duties (SoD), your <strong className="text-rose-400">Developer</strong> profile cannot generate live exploit payloads. Please consult Security QA to validate patches.
+                      </p>
+                    </div>
+                  )}
+
                   {!pocData[aiModal.Issue] && !pocLoading ? (
                     <div className="flex flex-col items-center justify-center h-full">
                       <div className="bg-rose-500/10 p-6 rounded-full border border-rose-500/20 mb-6">
@@ -1904,7 +2787,8 @@ function App() {
                       </p>
                       <button 
                         onClick={() => generatePoC(aiModal)} 
-                        className="bg-rose-600/10 border border-rose-500/40 text-rose-400 hover:bg-rose-600/20 px-8 py-3.5 rounded-lg text-xs font-bold uppercase tracking-widest transition-all flex items-center gap-3 shadow-[0_0_15px_rgba(244,63,94,0.15)]"
+                        disabled={userRole === 'developer'} 
+                        className="bg-rose-600/10 border border-rose-500/40 text-rose-400 hover:bg-rose-600/20 px-8 py-3.5 rounded-lg text-xs font-bold uppercase tracking-widest transition-all flex items-center gap-3 shadow-[0_0_15px_rgba(244,63,94,0.15)] disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                         <Zap size={18} /> Synthesize Exploit Payload
                       </button>
@@ -1921,6 +2805,80 @@ function App() {
                           <span className="text-xs font-bold text-rose-400 uppercase tracking-widest">Active Payload Configured</span>
                        </div>
                        <div className="font-sans text-sm text-zinc-300 leading-relaxed whitespace-normal ai-markdown-wrapper" dangerouslySetInnerHTML={{ __html: formatAiResponse(pocData[aiModal.Issue]) }} />
+                      
+                      {/* 🛡️ LIVE REDTEAM OFFENSIVE INTERFACE */}
+                      <div className="mt-8 border-t border-red-900/30 pt-6">
+                        {showRedTeamWarning ? (
+                          /* --- OFFENSIVE WARNING PANEL --- */
+                          <div className="bg-red-950/20 border border-red-500/30 rounded-xl p-8 text-center shadow-2xl">
+                            <ShieldAlert size={44} className="text-red-500 mx-auto mb-4 animate-pulse" />
+                            <h4 className="text-red-400 font-black uppercase tracking-widest mb-2 text-sm">Restricted Offensive Console</h4>
+                            <p className="text-zinc-400 text-xs mb-6 max-w-sm mx-auto leading-relaxed font-sans">
+                              You are engaging the Nexus-Red AI. This interface provides weaponized bypass techniques and lateral movement strategies. Proceed only for authorized security validation.
+                            </p>
+                            <button 
+                              onClick={() => setShowRedTeamWarning(false)}
+                              className="bg-red-600 hover:bg-red-500 text-white px-10 py-2.5 rounded-lg text-[10px] font-black uppercase tracking-tighter transition-all shadow-[0_0_20px_rgba(220,38,38,0.3)]"
+                            >
+                              Initialize Offensive Link
+                            </button>
+                          </div>
+                        ) : (
+                          /* --- FULL REDTEAM CHAT (Mirror of Remediation UI) --- */
+                          <div className="flex flex-col h-[450px] bg-black/60 rounded-xl border border-red-900/30 overflow-hidden shadow-2xl">
+                            <div className="p-3 bg-red-950/20 border-b border-red-900/30 flex justify-between items-center">
+                              <span className="text-[10px] font-black text-red-500 uppercase tracking-widest flex items-center gap-2">
+                                <TerminalSquare size={14}/> root@nexus-red:~#
+                              </span>
+                              <div className="flex gap-1">
+                                <div className="w-1.5 h-1.5 rounded-full bg-red-500/20"></div>
+                                <div className="w-1.5 h-1.5 rounded-full bg-red-500/40"></div>
+                                <div className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse"></div>
+                              </div>
+                            </div>
+                            
+                            <div className="flex-1 overflow-y-auto p-5 space-y-5 custom-scrollbar bg-[radial-gradient(circle_at_top_right,rgba(153,27,27,0.05),transparent)]">
+                              {(redTeamHistory[aiModal.Issue] || []).map((msg, idx) => (
+                                <div key={idx} className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
+                                  <div className="flex items-center gap-2 mb-1 px-1">
+                                    <span className="text-[9px] font-bold uppercase tracking-tighter text-zinc-600">
+                                      {msg.role === 'user' ? 'Operator' : 'Nexus-Red'}
+                                    </span>
+                                  </div>
+                                  <div className={`p-4 rounded-xl max-w-[85%] text-xs font-mono leading-relaxed ${msg.role === 'user' ? 'bg-red-600/10 border border-red-500/30 text-red-100' : 'bg-zinc-900/90 border border-zinc-800 text-zinc-300 shadow-xl'}`}>
+                                    {msg.role === 'assistant' ? (
+                                      <div className="ai-markdown-wrapper" dangerouslySetInnerHTML={{ __html: formatAiResponse(msg.content) }} />
+                                    ) : msg.content}
+                                  </div>
+                                </div>
+                              ))}
+                              {redTeamLoading && (
+                                <div className="flex items-center gap-2 text-red-500 text-[10px] font-black uppercase tracking-widest animate-pulse p-2">
+                                  <Activity size={12} className="animate-spin" /> Calculating Attack Vector...
+                                </div>
+                              )}
+                              <div ref={messagesEndRef} />
+                            </div>
+
+                            <div className="p-4 bg-zinc-950/80 border-t border-red-900/30 relative">
+                              <input 
+                                type="text"
+                                placeholder={userRole === 'admin' ? "Request bypass payload or lateral movement strategy..." : "RedTeam Console Restricted to Admin"}
+                                disabled={userRole !== 'admin' || redTeamLoading}
+                                className="w-full bg-black border border-red-900/40 rounded-lg py-3 px-4 text-xs text-red-400 outline-none focus:border-red-500 font-mono shadow-inner placeholder:text-zinc-800 disabled:opacity-50"
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter' && e.target.value.trim()) {
+                                    handleRedTeamChat(e.target.value);
+                                    e.target.value = '';
+                                  }
+                                }}
+                              />
+                              {userRole !== 'admin' && <Lock size={14} className="absolute right-7 top-7 text-zinc-700" />}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
                     </div>
                   )}
                 </div>
@@ -1930,7 +2888,7 @@ function App() {
           </motion.div>
         )}
       </AnimatePresence>
-    </div>
+    </motion.div>
   );
 }
 
