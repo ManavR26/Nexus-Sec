@@ -33,25 +33,73 @@ By combining **machine intelligence with automated scanning engines**, NexusSec 
 # 🏗️ System Architecture
 
 ```mermaid
-flowchart LR
+graph TD
+    %% Presentation Layer
+    subgraph Tier 1: Presentation Layer
+        UI[React.js Frontend Dashboard]
+    end
 
-A[React DevSecOps Dashboard] --> B[Flask API Server]
+    %% Orchestration Layer
+    subgraph Tier 2: Orchestration Layer
+        API[Flask API Gateway / Orchestrator]
+    end
 
-B --> C[SAST Engine]
-B --> D[DAST Engine]
-B --> E[AI Analysis Engine]
+    %% Intelligence Layer
+    subgraph Tier 3: Intelligence Layer
+        LLM[Groq AI Neural Core]
+    end
 
-C --> F[Bandit Static Scanner]
-D --> G[Payload Fuzzer SQLi XSS]
-E --> H[Groq LLaMA 3.3 API]
+    %% Security Engines
+    subgraph Tier 4: Security Engines
+        SAST[SAST: Git Cloner & Code Parser]
+        DAST[DAST: OWASP ZAP API]
+        CONT[Container: Aqua Trivy Binary]
+        DBVA[DBVA: MySQL Connector & AI Engine]
+    end
 
-E --> I[Auto Fix Engine]
-E --> J[Compliance Mapping]
+    %% Target Infrastructure
+    subgraph Tier 5: Target Infrastructure
+        T_GIT[Target: GitHub Repository]
+        T_WEB[Target: Live Web Application]
+        T_DOC[Target: Docker Registry]
+        T_DB[Target: Local MySQL Container]
+    end
 
-J --> K[SOC2]
-J --> L[ISO27001]
-J --> M[HIPAA]
-J --> N[PCI DSS]
+    %% ARROWS - Data Flow
+    UI -- "1. JSON Scan Request" --> API
+    
+    API -- "2. Threat Data Context" --> LLM
+    LLM -- "3. Triage / Remediation / PoC" --> API
+    
+    API -- "4a. Route: /scan/github" --> SAST
+    API -- "4b. Route: /scan/web" --> DAST
+    API -- "4c. Route: /scan/container" --> CONT
+    API -- "4d. Route: /scan/database" --> DBVA
+
+    SAST -- "5a. Clone & Parse Code" --> T_GIT
+    DAST -- "5b. Fuzzing Payloads (HTTP)" --> T_WEB
+    CONT -- "5c. Fetch Image Layers" --> T_DOC
+    DBVA -- "5d. Execute SQL Audits (TCP 3306)" --> T_DB
+
+    SAST -. "6a. Raw Code Issues" .-> API
+    DAST -. "6b. Raw ZAP Alerts" .-> API
+    CONT -. "6c. Raw CVE JSON" .-> API
+    DBVA -. "6d. Raw Misconfigs" .-> API
+
+    API -- "7. Processed Vulnerability Array" --> UI
+
+    classDef default fill:#09090b,stroke:#27272a,stroke-width:2px,color:#f4f4f5;
+    classDef react fill:#3b82f610,stroke:#3b82f6,color:#bfdbfe;
+    classDef flask fill:#10b98110,stroke:#10b981,color:#a7f3d0;
+    classDef ai fill:#d946ef10,stroke:#d946ef,color:#f5d0fe;
+    classDef engine fill:#6366f110,stroke:#6366f1,color:#c7d2fe;
+    classDef target fill:#f43f5e10,stroke:#f43f5e,color:#fecdd3;
+
+    class UI react;
+    class API flask;
+    class LLM ai;
+    class SAST,DAST,CONT,DBVA engine;
+    class T_GIT,T_WEB,T_DOC,T_DB target;
 ```
 
 ---
