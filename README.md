@@ -1,63 +1,95 @@
-# 🛡️ NexusSec
+<div align="center">
+  <img src="https://via.placeholder.com/1000x400/09090b/4f46e5?text=NexusSec+Platform+Dashboard+Screenshot" alt="NexusSec Dashboard Overview" width="100%">
+</div>
 
-## Enterprise-Grade DevSecOps & Vulnerability Assessment Platform
+# 🛡️ NexusSec: Enterprise DevSecOps & VAPT Platform
 
-![React](https://img.shields.io/badge/React-20232A?style=for-the-badge\&logo=react\&logoColor=61DAFB)
-![Python](https://img.shields.io/badge/Python-3776AB?style=for-the-badge\&logo=python\&logoColor=white)
-![Flask](https://img.shields.io/badge/Flask-000000?style=for-the-badge\&logo=flask\&logoColor=white)
-![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-38B2AC?style=for-the-badge\&logo=tailwind-css\&logoColor=white)
-![Groq](https://img.shields.io/badge/AI_Engine-Groq_LLaMA_3.3-f59e0b?style=for-the-badge)
+![License](https://img.shields.io/badge/License-MIT-blue.svg)
+![React](https://img.shields.io/badge/Frontend-React.js-61DAFB?logo=react&logoColor=black)
+![Flask](https://img.shields.io/badge/Backend-Flask_Python-white?logo=flask&logoColor=black)
+![AI](https://img.shields.io/badge/Neural_Core-Groq_Llama_3.3-f43f5e)
+![Docker](https://img.shields.io/badge/Infrastructure-Docker-2496ED?logo=docker&logoColor=white)
 
-![License](https://img.shields.io/github/license/ManavR26/Nexus-Sec)
-![Stars](https://img.shields.io/github/stars/ManavR26/Nexus-Sec)
-![Forks](https://img.shields.io/github/forks/ManavR26/Nexus-Sec)
-![Issues](https://img.shields.io/github/issues/ManavR26/Nexus-Sec)
-
----
-
-# 📌 Overview
-
-**NexusSec (Sentinel V2)** is an AI-driven **DevSecOps Vulnerability Assessment Platform** that bridges the gap between **deep technical security scanning and executive-level compliance reporting**.
-
-The platform orchestrates multiple security analysis pipelines including:
-
-* **SAST (Static Application Security Testing)**
-* **DAST (Dynamic Application Security Testing)**
-* **AI-based Threat Triage**
-* **Compliance Risk Mapping**
-
-By combining **machine intelligence with automated scanning engines**, NexusSec helps developers and security teams detect, prioritize, and remediate vulnerabilities faster.
+**NexusSec** is a comprehensive, automated Vulnerability Assessment and Penetration Testing (VAPT) platform. Designed as a modern DevSecOps control center, it bridges the gap between deterministic infrastructure auditing and generative AI threat remediation, providing security teams with a unified dashboard to manage risk across code, web apps, containers, and databases.
 
 ---
 
-# 🏗️ System Architecture
+## 📑 Table of Contents
+1. [Platform Overview](#-platform-overview)
+2. [Security Engines & Scanners](#-security-engines--scanners)
+3. [Role-Based Access Control (RBAC)](#-role-based-access-control-rbac)
+4. [System Architecture](#-system-architecture)
+5. [Technology Stack](#-technology-stack)
+6. [Installation & Setup](#-getting-started)
+7. [Ethical Disclaimer](#-ethical-use--disclaimer)
+
+---
+
+## 🚀 Platform Overview
+
+NexusSec centralizes multi-cloud and application security into a single pane of glass. It features a heuristic trend engine that tracks vulnerability mitigation over time, a dynamic GRC (Governance, Risk, and Compliance) matrix, and an integrated **Neural Core** that utilizes Llama-3.3 to auto-generate remediation patches and weaponized Red Team Proof of Concepts (PoCs).
+
+<div align="center">
+  <img src="https://via.placeholder.com/800x400/09090b/eab308?text=Neural+Core+AI+Remediation+Screenshot" alt="NexusSec Neural Core" width="80%">
+  <p><em>Nexus-Red Neural Core generating dynamic exploit payloads and remediation scripts.</em></p>
+</div>
+
+---
+
+## ⚙️ Security Engines & Scanners
+
+NexusSec utilizes a hybrid scanning architecture, combining deterministic rule-based checks with live offensive fuzzing.
+
+| Engine Module | Target Infrastructure | Core Technology | Assessment Strategy |
+| :--- | :--- | :--- | :--- |
+| **SAST (Source)** | GitHub Repositories | Python AST / Regex | Static secret scanning & deep contextual code parsing. |
+| **DAST (Web)** | Live Web Applications | OWASP ZAP (Python API) | Active HTTP fuzzing, AJAX spidering, and payload injection. |
+| **Container Ops** | Public Docker Registries & IaC | Aqua Trivy | OS-level CVE extraction & Dockerfile misconfiguration checks. |
+| **DBVA (Infrastructure)** | MySQL, PostgreSQL, Oracle | `mysql.connector` & Groq AI | **Hybrid:** Live deterministic MySQL querying + AI Predictive Threat Modeling for enterprise databases. |
+
+---
+
+## 🔐 Role-Based Access Control (RBAC)
+
+To enforce strict Separation of Duties (SoD), NexusSec features an IAM gateway that restricts module access based on the authenticated user's profile.
+
+| User Profile | Access Level | Authorized Capabilities | Restricted Actions |
+| :--- | :--- | :--- | :--- |
+| **DevSecOps Admin** | `Full Access` | Execute all scanners, approve/deny risk exceptions, view Immutable Ledger, generate Red Team PoCs. | None. |
+| **Developer** | `Scope-Limited` | Execute SAST, DAST, and Container scans. Request risk exceptions, use AI Auto-Fix. | Cannot view GRC Dashboard, cannot run Database Infrastructure audits, cannot generate Red Team PoCs. |
+| **Compliance Auditor** | `Read-Only` | View Dashboard KPI metrics, GRC mapping, and Immutable Compliance Ledger. | Cannot execute active scans, view source code, or modify platform state. |
+
+<div align="center">
+  <img src="https://via.placeholder.com/800x350/09090b/10b981?text=IAM+Role+Selector+&+Clearance+Lock+Screen" alt="RBAC Lock Screen" width="80%">
+</div>
+
+---
+
+## 🏗️ System Architecture
+
+NexusSec operates on a decoupled, microservices-oriented architecture, strictly separating the Presentation Layer from the Orchestration API and Security Engines.
 
 ```mermaid
 graph TD
-    %% Presentation Layer
     subgraph Tier 1: Presentation Layer
         UI[React.js Frontend Dashboard]
     end
 
-    %% Orchestration Layer
     subgraph Tier 2: Orchestration Layer
         API[Flask API Gateway / Orchestrator]
     end
 
-    %% Intelligence Layer
     subgraph Tier 3: Intelligence Layer
         LLM[Groq AI Neural Core]
     end
 
-    %% Security Engines
     subgraph Tier 4: Security Engines
-        SAST[SAST: Git Cloner & Code Parser]
+        SAST[SAST: Git Cloner & Context Parser]
         DAST[DAST: OWASP ZAP API]
-        CONT[Container: Aqua Trivy Binary]
-        DBVA[DBVA: MySQL Connector & AI Engine]
+        CONT[Container: Aqua Trivy Subprocess]
+        DBVA[DBVA: MySQL Connector & AI Matrix]
     end
 
-    %% Target Infrastructure
     subgraph Tier 5: Target Infrastructure
         T_GIT[Target: GitHub Repository]
         T_WEB[Target: Live Web Application]
@@ -65,307 +97,119 @@ graph TD
         T_DB[Target: Local MySQL Container]
     end
 
-    %% ARROWS - Data Flow
-    UI -- "1. JSON Scan Request" --> API
-    
-    API -- "2. Threat Data Context" --> LLM
-    LLM -- "3. Triage / Remediation / PoC" --> API
-    
-    API -- "4a. Route: /scan/github" --> SAST
-    API -- "4b. Route: /scan/web" --> DAST
-    API -- "4c. Route: /scan/container" --> CONT
-    API -- "4d. Route: /scan/database" --> DBVA
+    UI --> API
+    API --> LLM
+    LLM --> API
 
-    SAST -- "5a. Clone & Parse Code" --> T_GIT
-    DAST -- "5b. Fuzzing Payloads (HTTP)" --> T_WEB
-    CONT -- "5c. Fetch Image Layers" --> T_DOC
-    DBVA -- "5d. Execute SQL Audits (TCP 3306)" --> T_DB
+    API --> SAST
+    API --> DAST
+    API --> CONT
+    API --> DBVA
 
-    SAST -. "6a. Raw Code Issues" .-> API
-    DAST -. "6b. Raw ZAP Alerts" .-> API
-    CONT -. "6c. Raw CVE JSON" .-> API
-    DBVA -. "6d. Raw Misconfigs" .-> API
+    SAST --> T_GIT
+    DAST --> T_WEB
+    CONT --> T_DOC
+    DBVA --> T_DB
 
-    API -- "7. Processed Vulnerability Array" --> UI
+    SAST -.-> API
+    DAST -.-> API
+    CONT -.-> API
+    DBVA -.-> API
 
-    classDef default fill:#09090b,stroke:#27272a,stroke-width:2px,color:#f4f4f5;
-    classDef react fill:#3b82f610,stroke:#3b82f6,color:#bfdbfe;
-    classDef flask fill:#10b98110,stroke:#10b981,color:#a7f3d0;
-    classDef ai fill:#d946ef10,stroke:#d946ef,color:#f5d0fe;
-    classDef engine fill:#6366f110,stroke:#6366f1,color:#c7d2fe;
-    classDef target fill:#f43f5e10,stroke:#f43f5e,color:#fecdd3;
-
-    class UI react;
-    class API flask;
-    class LLM ai;
-    class SAST,DAST,CONT,DBVA engine;
-    class T_GIT,T_WEB,T_DOC,T_DB target;
+    API --> UI
 ```
 
 ---
 
-# ✨ Key Enterprise Features
+## 💻 Technology Stack
 
-## 🧠 Polyglot Neural SAST Engine
-
-* Offloads heavy **AST-based vulnerability scanning** to the Groq **LLaMA 3.3 Cloud API**
-* Detects **OWASP Top 10 vulnerabilities**
-* Supports **multi-language static code analysis**
-* Enables rapid automated security scanning
-
----
-
-## ⚡ Time-Boxed DAST Reconnaissance
-
-* Dynamic web vulnerability scanning engine
-* Supports **asynchronous rapid scanning modes**
-* Includes **time-locked exhaustive fuzzing loops**
-* Detects vulnerabilities such as:
-
-  * SQL Injection
-  * Cross-Site Scripting (XSS)
-  * Input validation flaws
+| Category | Technologies Used |
+| :--- | :--- |
+| **Frontend UI** | React.js, Tailwind CSS, Framer Motion, Recharts |
+| **Backend API** | Python, Flask, Flask-CORS |
+| **Security Integrations** | OWASP ZAP, Aqua Trivy, mysql-connector-python |
+| **AI / Machine Learning** | Groq API, Meta Llama-3.3-70b |
+| **Infrastructure / DevOps** | Docker, Docker-Compose |
 
 ---
 
-## ⚖️ Executive GRC & Compliance Matrix
+## 🏁 Getting Started
 
-Automatically translates technical vulnerabilities into **business-level risk intelligence**.
+### Prerequisites
 
-Maps security findings to industry frameworks including:
-
-* **SOC 2**
-* **ISO 27001**
-* **HIPAA**
-* **PCI-DSS**
-
----
-
-## 🤖 Neural Auto-Fix & Red Team PoC
-
-NexusSec includes a **persistent AI security assistant** capable of:
-
-* Generating **secure code remediation**
-* Suggesting **patch strategies**
-* Producing **benign Proof-of-Concept exploit scripts**
-* Explaining vulnerabilities and mitigation strategies
+- Node.js (v16+) & npm  
+- Python (v3.9+) & pip  
+- Docker Desktop  
+- OWASP ZAP (Port 8080)  
+- Aqua Trivy  
 
 ---
 
-# 📊 Core Capabilities
-
-| Feature              | Description                                   | Technology            |
-| -------------------- | --------------------------------------------- | --------------------- |
-| Polyglot SAST Engine | Multi-language static vulnerability scanning  | Bandit + AST          |
-| Dynamic Web Scanner  | Automated SQLi and XSS payload testing        | Python Payload Fuzzer |
-| AI Threat Analysis   | Neural vulnerability triage and analysis      | Groq LLaMA 3.3        |
-| Auto Remediation     | AI-generated secure code fixes                | LLM Code Analysis     |
-| Compliance Mapping   | Maps vulnerabilities to compliance frameworks | SOC2 / ISO27001       |
-| DevSecOps Dashboard  | Centralized vulnerability monitoring UI       | React + Tailwind      |
-
----
-
-# 📸 Dashboard Preview
-
-
-### DevSecOps Dashboard
-
-![Dashboard](assets/dashboard.png)
-
-### Vulnerability Scan Results
-
-![Scan Results](assets/scan-results.png)
-
-### AI Remediation Assistant
-
-![AI Remediation](assets/ai-remediation.png)
-
-### Compliance Risk Matrix
-
-![Compliance](assets/compliance-report.png)
-
----
-
-# 💻 Local Installation & Setup Guide
-
-The platform requires running:
-
-* **Python Flask Backend**
-* **React Frontend**
-
-Both must run **simultaneously in separate terminal windows**.
-
----
-
-# 📦 Prerequisites
-
-Install the following software before starting:
-
-* Node.js (v16 or higher)
-  https://nodejs.org/
-
-* Python (v3.9 or higher)
-  https://www.python.org/downloads/
-
-* Git
-
----
-
-# 🚀 Step 1: Clone the Repository
+### 1. Clone the Repository
 
 ```bash
-git clone https://github.com/ManavR26/Nexus-Sec.git
-cd Nexus-Sec
+git clone https://github.com/yourusername/NexusSec.git
+cd NexusSec
 ```
 
 ---
 
-# 🧠 Step 2: Initialize the Python Backend (Terminal 1)
+### 2. Environment Variables
+
+Create `.env` inside `server/`:
+
+```env
+GROQ_API_KEY=your_groq_api_key_here
+GITHUB_CLIENT_ID=your_github_oauth_id
+GITHUB_CLIENT_SECRET=your_github_oauth_secret
+```
+
+---
+
+### 3. Backend Setup
 
 ```bash
 cd server
-
 python -m venv venv
-```
-
-Activate the environment.
-
-Windows:
-
-```bash
-venv\Scripts\activate
-```
-
-macOS / Linux:
-
-```bash
 source venv/bin/activate
-```
-
-Install dependencies:
-
-```bash
-pip install flask flask-cors requests python-dotenv groq bandit
-```
-
----
-
-# ⚠️ Step 3: Environment & Security Configuration
-
-Create a file inside the **server directory**:
-
-```
-.env
-```
-
-Add the following configuration:
-
-```
-GROQ_API_KEY=your_groq_api_key_here
-GITHUB_CLIENT_ID=your_github_client_id_here
-GITHUB_CLIENT_SECRET=your_github_client_secret_here
-```
-
-### 🚨 Security Warning
-
-Never commit the `.env` file to version control.
-
-Ensure `.gitignore` contains:
-
-```
-.env
-```
-
----
-
-# 🖥️ Step 4: Start the Backend Server
-
-```bash
+pip install -r requirements.txt
 python app.py
 ```
 
-The backend will run on:
-
-```
-http://localhost:5000
-```
-
-Leave this terminal running.
+Runs on: `http://localhost:5000`
 
 ---
 
-# 🌐 Step 5: Start the React Frontend (Terminal 2)
-
-Open a new terminal in the project root.
-
-Install dependencies:
+### 4. Frontend Setup
 
 ```bash
+cd client
 npm install
-```
-
-Run the dashboard:
-
-```bash
 npm start
 ```
 
-The application will launch at:
+Runs on: `http://localhost:3000`
 
+---
+
+### 5. DBVA Testing Setup
+
+```bash
+cd target-environments/mysql-vuln
+docker-compose up -d
 ```
-http://localhost:3000
-```
+
+Target: `localhost:3306`
 
 ---
 
-# 🛑 Disclaimer & Ethical Use
+## ⚠️ Ethical Use & Disclaimer
 
-## Live Payload Execution
+This tool includes active offensive security testing features.
 
-NexusSec contains **active Dynamic Application Security Testing payload engines** capable of executing:
-
-* SQL Injection probes
-* Cross-Site Scripting payloads
-* Brute-force reconnaissance patterns
+**Use only with proper authorization.**  
+Developers assume **no liability** for misuse.
 
 ---
 
-## Strict Authorization Required
-
-Do **NOT** scan systems you do not own or have **explicit written permission** to test.
-
-Unauthorized security scanning can be **illegal** and may disrupt production infrastructure.
-
----
-
-## Liability Notice
-
-This project is intended strictly for:
-
-* Educational purposes
-* Academic research
-* Authorized security testing
-* DevSecOps experimentation
-
-The developer assumes **no responsibility for misuse or damages** caused by unauthorized use.
-
----
-
-# 🚀 Future Improvements
-
-* Docker container vulnerability scanning
-* Kubernetes security auditing
-* CI/CD pipeline integration
-* Real-time threat intelligence feeds
-* Automated PDF security reports
-
----
-
-# 📄 License
-
-This project is intended for **educational and research purposes**.
-
-Use responsibly and ethically.
-
----
-
+*Developed as a B.Tech Capstone Project focusing on Enterprise Security Architecture & Applied Generative AI.*
