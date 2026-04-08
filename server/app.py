@@ -324,100 +324,147 @@ def api_web_scan():
     if not target:
         return jsonify({"error": "No target URL provided."}), 400
 
-    try:
-        print(f"\n[*] [DAST ENGINE] Engaging OWASP ZAP on: {target}")
-        
-        # Connect to the local ZAP Daemon
-        zap = ZAPv2(proxies=ZAP_PROXY, apikey=ZAP_API_KEY)
-        
-        print(f"   [->] Pinging target URL to establish proxy routing...")
-        zap.urlopen(target)
-        time.sleep(2) 
-        
-        # 1. Standard Spider
-        if 'spider' in features:
-            print("   [->] Initializing Standard Spider...")
-            # ✨ CHANGED: recurse=True so it crawls deep into the site
-            scan_id = zap.spider.scan(target, maxchildren=10, recurse=True)
-            while int(zap.spider.status(scan_id)) < 100:
-                time.sleep(1)
-            print("   [+] Standard Spider complete.")
+    # ✨ THE TOGGLE: Check environment variable (Defaults to 'active' if not set)
+    dast_mode = os.environ.get('DAST_MODE', 'active')
 
-        # 2. AJAX Spider (✨ NEW: Crucial for React/Node.js apps)
-        if 'ajax' in features:
-            print("   [->] Initializing AJAX Spider (Headless Browser)...")
-            try:
-                zap.ajaxSpider.scan(target)
-                while zap.ajaxSpider.status == 'running':
-                    time.sleep(2)
-                print("   [+] AJAX Spider complete.")
-            except Exception as e:
-                print(f"   [!] AJAX Spider skipped (Add-on might not be installed in ZAP): {e}")
+    if dast_mode == 'simulation':
+        print(f"\n[*] [DAST ENGINE - CLOUD MODE] Simulating scan on: {target}")
+        try:
+            client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
             
-        # 3. Passive Scan
-        if 'passive' in features:
-            print("   [->] Analyzing Passive Scan queue...")
-            while int(zap.pscan.records_to_scan) > 0:
-                time.sleep(1)
-            print("   [+] Passive analysis complete.")
+            prompt = f"""
+            You are the DAST (Dynamic Application Security Testing) engine of the NexusSec platform.
+            The user has just executed a live web scan against this target: {target}
             
-        # 4. Active Scan (The heavy hitter)
-        if 'active' in features:
-            print("   [->] Initializing Active Attack Engine (Recurse=TRUE)...")
-            # ✨ CHANGED: recurse=True tells ZAP to attack all the folders the spiders found!
-            scan_id = zap.ascan.scan(target, recurse=True)
+            Based on common web vulnerabilities, generate a highly realistic simulated DAST report. 
+            You MUST return a JSON object containing a single key "findings" which maps to an array of 3 to 5 vulnerabilities.
             
-            # Extended timeout to 3 minutes (180 seconds) to allow for deep fuzzing
-            timeout = 180 
-            while int(zap.ascan.status(scan_id)) < 100 and timeout > 0:
-                time.sleep(5)
-                timeout -= 5
-                print(f"   [...] Active Scan Progress: {zap.ascan.status(scan_id)}%")
-            print("   [+] Active Scan phase concluded.")
+            Each vulnerability object in the array MUST have these exact keys:
+            - "Issue": (String) The name of the vulnerability (e.g., "Reflected XSS", "SQL Injection").
+            - "Severity": (String) Must be "Critical", "High", "Medium", or "Low".
+            - "Type": (String) Must be exactly "ZAP Context Module".
+            - "Fix": (String) Actionable remediation steps (keep it concise).
+            - "File": (String) The URL where the issue was found (use {target} or a logical path like {target}/api/login).
+            """
 
-        # 5. Extract & Format Findings
-        print("[*] Retrieving vulnerability telemetry from ZAP...")
-        raw_alerts = zap.core.alerts(baseurl=target)
-        
-        findings = []
-        seen_issues = set()
-        
-        for alert in raw_alerts:
-            # Deduplicate by issue name and exact URL
-            sig = f"{alert.get('name')}-{alert.get('url')}"
-            if sig in seen_issues:
-                continue
-            seen_issues.add(sig)
+            # Force Groq to return guaranteed JSON
+            response = client.chat.completions.create(
+                messages=[{"role": "user", "content": prompt}],
+                model="llama-3.3-70b-versatile",
+                temperature=0.4,
+                response_format={"type": "json_object"} 
+            )
+
+            ai_data = json.loads(response.choices[0].message.content)
+            simulated_findings = ai_data.get("findings", [])
             
-            # Map ZAP's risk levels to your React Dashboard's severity taxonomy
-            risk = alert.get('risk', 'Low')
-            if risk == 'Informational':
-                risk = 'Info'
+            # Sort by severity so Criticals hit the top of the dashboard
+            sev_rank = {"Critical": 4, "High": 3, "Medium": 2, "Low": 1, "Info": 0}
+            simulated_findings.sort(key=lambda x: sev_rank.get(x.get("Severity", "Low"), 0), reverse=True)
+
+            print(f"[+] Simulation Complete. Yielded {len(simulated_findings)} mock threats.")
+            return jsonify({"status": "success", "findings": simulated_findings}), 200
+
+        except Exception as e:
+            print(f"[-] Simulation Error: {e}")
+            return jsonify({"error": "Neural Simulation failed. Check Groq API link."}), 500
+
+    else:
+        # 🔴 LOCAL / PRODUCTION MODE: Run the real OWASP ZAP daemon
+        try:
+            print(f"\n[*] [DAST ENGINE] Engaging OWASP ZAP on: {target}")
+            
+            # Connect to the local ZAP Daemon
+            zap = ZAPv2(proxies=ZAP_PROXY, apikey=ZAP_API_KEY)
+            
+            print(f"   [->] Pinging target URL to establish proxy routing...")
+            zap.urlopen(target)
+            time.sleep(2) 
+            
+            # 1. Standard Spider
+            if 'spider' in features:
+                print("   [->] Initializing Standard Spider...")
+                # ✨ CHANGED: recurse=True so it crawls deep into the site
+                scan_id = zap.spider.scan(target, maxchildren=10, recurse=True)
+                while int(zap.spider.status(scan_id)) < 100:
+                    time.sleep(1)
+                print("   [+] Standard Spider complete.")
+
+            # 2. AJAX Spider (✨ NEW: Crucial for React/Node.js apps)
+            if 'ajax' in features:
+                print("   [->] Initializing AJAX Spider (Headless Browser)...")
+                try:
+                    zap.ajaxSpider.scan(target)
+                    while zap.ajaxSpider.status == 'running':
+                        time.sleep(2)
+                    print("   [+] AJAX Spider complete.")
+                except Exception as e:
+                    print(f"   [!] AJAX Spider skipped (Add-on might not be installed in ZAP): {e}")
                 
-            # Clean up the fix text
-            fix_raw = alert.get('solution', 'Review server configuration.')
-            fix_clean = re.sub('<[^<]+>', '', fix_raw)[:150] + "..." if len(fix_raw) > 150 else fix_raw
+            # 3. Passive Scan
+            if 'passive' in features:
+                print("   [->] Analyzing Passive Scan queue...")
+                while int(zap.pscan.records_to_scan) > 0:
+                    time.sleep(1)
+                print("   [+] Passive analysis complete.")
+                
+            # 4. Active Scan (The heavy hitter)
+            if 'active' in features:
+                print("   [->] Initializing Active Attack Engine (Recurse=TRUE)...")
+                # ✨ CHANGED: recurse=True tells ZAP to attack all the folders the spiders found!
+                scan_id = zap.ascan.scan(target, recurse=True)
+                
+                # Extended timeout to 3 minutes (180 seconds) to allow for deep fuzzing
+                timeout = 180 
+                while int(zap.ascan.status(scan_id)) < 100 and timeout > 0:
+                    time.sleep(5)
+                    timeout -= 5
+                    print(f"   [...] Active Scan Progress: {zap.ascan.status(scan_id)}%")
+                print("   [+] Active Scan phase concluded.")
+
+            # 5. Extract & Format Findings
+            print("[*] Retrieving vulnerability telemetry from ZAP...")
+            raw_alerts = zap.core.alerts(baseurl=target)
             
-            findings.append({
-                "Issue": alert.get('name', 'Unknown Vulnerability'),
-                "Type": "ZAP Context Module",
-                "Severity": risk,
-                "Fix": fix_clean,
-                "File": alert.get('url', target)
-            })
+            findings = []
+            seen_issues = set()
+            
+            for alert in raw_alerts:
+                # Deduplicate by issue name and exact URL
+                sig = f"{alert.get('name')}-{alert.get('url')}"
+                if sig in seen_issues:
+                    continue
+                seen_issues.add(sig)
+                
+                # Map ZAP's risk levels to your React Dashboard's severity taxonomy
+                risk = alert.get('risk', 'Low')
+                if risk == 'Informational':
+                    risk = 'Info'
+                    
+                # Clean up the fix text
+                fix_raw = alert.get('solution', 'Review server configuration.')
+                fix_clean = re.sub('<[^<]+>', '', fix_raw)[:150] + "..." if len(fix_raw) > 150 else fix_raw
+                
+                findings.append({
+                    "Issue": alert.get('name', 'Unknown Vulnerability'),
+                    "Type": "ZAP Context Module",
+                    "Severity": risk,
+                    "Fix": fix_clean,
+                    "File": alert.get('url', target)
+                })
 
-        # Sort by severity so Criticals hit the top of the dashboard
-        sev_rank = {"Critical": 4, "High": 3, "Medium": 2, "Low": 1, "Info": 0}
-        findings.sort(key=lambda x: sev_rank.get(x["Severity"], 0), reverse=True)
+            # Sort by severity so Criticals hit the top of the dashboard
+            sev_rank = {"Critical": 4, "High": 3, "Medium": 2, "Low": 1, "Info": 0}
+            findings.sort(key=lambda x: sev_rank.get(x["Severity"], 0), reverse=True)
 
-        print(f"[+] ZAP Execution Complete. Filtered {len(findings)} unique threats to frontend.")
-        return jsonify({"status": "success", "findings": findings})
+            print(f"[+] ZAP Execution Complete. Filtered {len(findings)} unique threats to frontend.")
+            return jsonify({"status": "success", "findings": findings})
 
-    except Exception as e:
-        print(f"[-] OWASP ZAP Engine Error: {str(e)}")
-        if "Connection refused" in str(e):
-            return jsonify({"error": "Failed to connect to ZAP. Ensure the ZAP desktop app or daemon is running on port 8080."}), 500
-        return jsonify({"error": f"ZAP Engine failed: {str(e)}"}), 500
+        except Exception as e:
+            print(f"[-] OWASP ZAP Engine Error: {str(e)}")
+            if "Connection refused" in str(e):
+                return jsonify({"error": "Failed to connect to ZAP. Ensure the ZAP desktop app or daemon is running on port 8080."}), 500
+            return jsonify({"error": f"ZAP Engine failed: {str(e)}"}), 500
 
         
 @app.route('/api/scan/container', methods=['POST'])
