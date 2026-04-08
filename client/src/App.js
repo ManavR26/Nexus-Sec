@@ -191,7 +191,6 @@ function App() {
     user: 'root',
     password: ''
   });
-  const [dbBetaMessage, setDbBetaMessage] = useState(null);
   const [dbFindings, setDbFindings] = useState(() => JSON.parse(localStorage.getItem('dbFindings')) || []);
   useEffect(() => { localStorage.setItem('dbFindings', JSON.stringify(dbFindings)); }, [dbFindings]);
 
@@ -268,11 +267,7 @@ function App() {
     return { text: 'Audit Passed', color: 'emerald', icon: ShieldCheck };
   };
 
-  const formatTime = (seconds) => {
-    const m = Math.floor(seconds / 60).toString().padStart(2, '0');
-    const s = (seconds % 60).toString().padStart(2, '0');
-    return `${m}:${s}`;
-  };
+  
 
   // --- PERSISTENT SESSION STATE ---
   const [githubFindings, setGithubFindings] = useState(() => JSON.parse(localStorage.getItem('githubFindings')) || []);
@@ -352,7 +347,6 @@ function App() {
     
     // 2. Clear from pending requests
     const updated = { ...pendingDismissals };
-    const requester = updated[issueId]?.requester || 'developer';
     delete updated[issueId];
     setPendingDismissals(updated);
     setResolvedDismissals(prev => [...prev, { issueId, status: 'approved' }]);
@@ -799,7 +793,6 @@ const activeDockerfile = getActiveFindings(processedDockerfile).filter(f =>
 
   const executeDatabaseScan = async () => {
     setScanState({ isActive: true, progress: 0 });
-    setDbBetaMessage(null);
     setDbFindings([]);
 
     const progressInterval = setInterval(() => {
@@ -815,7 +808,6 @@ const activeDockerfile = getActiveFindings(processedDockerfile).filter(f =>
       const data = await response.json();
       
       if (data.status === 'beta') {
-        setDbBetaMessage(data.message);
       } else if (data.findings) {
         const incoming = data.findings;
         
@@ -898,7 +890,7 @@ const activeDockerfile = getActiveFindings(processedDockerfile).filter(f =>
     notify('info', 'Connecting to Neural Network...');
     
     try {
-      const response = await axios.post('${API_BASE}/api/ai/remediate', { finding });
+      const response = await axios.post(`${API_BASE}/api/ai/remediate`, { finding });
       const newMessages = [{ role: 'assistant', content: response.data.remediation }];
       
       setAiModal(prev => ({ ...prev, messages: newMessages }));
@@ -924,7 +916,7 @@ const activeDockerfile = getActiveFindings(processedDockerfile).filter(f =>
     setAiLoading(true);
 
     try {
-      const response = await axios.post('${API_BASE}/api/ai/chat', { 
+      const response = await axios.post(`${API_BASE}/api/ai/chat`, { 
         finding: aiModal, 
         history: updatedMessages.map(m => ({ role: m.role, content: m.content })) 
       });
@@ -950,7 +942,7 @@ const activeDockerfile = getActiveFindings(processedDockerfile).filter(f =>
     setRedTeamLoading(true);
 
     try {
-      const response = await axios.post('${API_BASE}/api/ai/redteam/chat', { 
+      const response = await axios.post(`${API_BASE}/api/ai/redteam/chat`, { 
         finding: aiModal, 
         history: updatedHistory 
       });
@@ -988,7 +980,7 @@ const activeDockerfile = getActiveFindings(processedDockerfile).filter(f =>
     notify('info', 'Initializing Offensive Red Team module...');
     
     try {
-      const response = await axios.post('${API_BASE}/api/ai/exploit', { finding });
+      const response = await axios.post(`${API_BASE}/api/ai/exploit`, { finding });
       setPocData(prev => ({ ...prev, [finding.Issue]: response.data.poc }));
       notify('success', 'Exploit payload synthesized.');
     } catch (error) {
