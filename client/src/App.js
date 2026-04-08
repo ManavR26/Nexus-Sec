@@ -86,6 +86,8 @@ const MatrixBackground = () => {
   );
 };
 
+const API_BASE = process.env.REACT_APP_API_URL || 'http://localhost:5000';
+
 // ==========================================
 // 🚀 MAIN APPLICATION
 // ==========================================
@@ -433,7 +435,7 @@ function App() {
     notify('info', 'Consulting Neural Network for Threat Triage...');
     
     try {
-      const response = await axios.post('http://localhost:5000/api/ai/triage', { findings: currentFindings });
+      const response = await axios.post(`${API_BASE}/api/ai/triage`, { findings: currentFindings });
       setAiTriageData(prev => ({ ...prev, ...response.data.triage_results }));
       notify('success', 'Neural Triage complete. Dashboard updated.');
     } catch (error) {
@@ -448,7 +450,7 @@ function App() {
     
     if (code && !githubToken) {
       notify('info', 'Authenticating with GitHub...');
-      axios.post('http://localhost:5000/api/auth/github', { code })
+      axios.post(`${API_BASE}/api/auth/github`, { code })
         .then(res => {
           if (res.data.status === 'success') {
             setGithubToken(res.data.token);
@@ -729,7 +731,7 @@ const activeDockerfile = getActiveFindings(processedDockerfile).filter(f =>
     }, 800);
 
     try {
-      const response = await axios.post(`http://localhost:5000/api/scan/${endpoint}`, payload);
+      const response = await axios.post(`${API_BASE}/api/scan/${endpoint}`, payload);
       
       clearInterval(scanTimerRef.current);
       setScanState(prev => ({ ...prev, progress: 100, phase: 'Generating report...' }));
@@ -805,8 +807,7 @@ const activeDockerfile = getActiveFindings(processedDockerfile).filter(f =>
     }, 500);
 
     try {
-      const response = await fetch('http://localhost:5000/api/scan/database', {
-        method: 'POST',
+      const response = await fetch(`${API_BASE}/api/scan/database`, {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(dbConfig)
       });
@@ -897,7 +898,7 @@ const activeDockerfile = getActiveFindings(processedDockerfile).filter(f =>
     notify('info', 'Connecting to Neural Network...');
     
     try {
-      const response = await axios.post('http://localhost:5000/api/ai/remediate', { finding });
+      const response = await axios.post('${API_BASE}/api/ai/remediate', { finding });
       const newMessages = [{ role: 'assistant', content: response.data.remediation }];
       
       setAiModal(prev => ({ ...prev, messages: newMessages }));
@@ -923,7 +924,7 @@ const activeDockerfile = getActiveFindings(processedDockerfile).filter(f =>
     setAiLoading(true);
 
     try {
-      const response = await axios.post('http://localhost:5000/api/ai/chat', { 
+      const response = await axios.post('${API_BASE}/api/ai/chat', { 
         finding: aiModal, 
         history: updatedMessages.map(m => ({ role: m.role, content: m.content })) 
       });
@@ -949,7 +950,7 @@ const activeDockerfile = getActiveFindings(processedDockerfile).filter(f =>
     setRedTeamLoading(true);
 
     try {
-      const response = await axios.post('http://localhost:5000/api/ai/redteam/chat', { 
+      const response = await axios.post('${API_BASE}/api/ai/redteam/chat', { 
         finding: aiModal, 
         history: updatedHistory 
       });
@@ -987,7 +988,7 @@ const activeDockerfile = getActiveFindings(processedDockerfile).filter(f =>
     notify('info', 'Initializing Offensive Red Team module...');
     
     try {
-      const response = await axios.post('http://localhost:5000/api/ai/exploit', { finding });
+      const response = await axios.post('${API_BASE}/api/ai/exploit', { finding });
       setPocData(prev => ({ ...prev, [finding.Issue]: response.data.poc }));
       notify('success', 'Exploit payload synthesized.');
     } catch (error) {
