@@ -4,7 +4,7 @@ FROM python:3.9-slim
 # 2. Set the working directory inside the container
 WORKDIR /app
 
-# 3. Install system dependencies and Aqua Trivy (Modern Secure Method)
+# 3. Install system dependencies and Aqua Trivy (Force Stable Bookworm Repo)
 RUN apt-get update && apt-get install -y \
     wget \
     apt-transport-https \
@@ -12,10 +12,10 @@ RUN apt-get update && apt-get install -y \
     lsb-release \
     && mkdir -p /etc/apt/keyrings \
     && wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | gpg --dearmor -o /etc/apt/keyrings/trivy.gpg \
-    && echo "deb [signed-by=/etc/apt/keyrings/trivy.gpg] https://aquasecurity.github.io/trivy-repo/deb $(lsb_release -sc) main" | tee /etc/apt/sources.list.d/trivy.list \
+    && echo "deb [signed-by=/etc/apt/keyrings/trivy.gpg] https://aquasecurity.github.io/trivy-repo/deb bookworm main" | tee /etc/apt/sources.list.d/trivy.list \
     && apt-get update && apt-get install -y trivy \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
-
+    
 # 4. Copy requirements first to leverage Docker caching
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
