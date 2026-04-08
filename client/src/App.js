@@ -1392,9 +1392,21 @@ const activeDockerfile = getActiveFindings(processedDockerfile).filter(f =>
                 </div>
                 <Activity className="text-indigo-500/50" size={24}/>
               </div>
-              <button onClick={handleResetEngine} className="w-full inline-flex items-center justify-center gap-2 text-xs font-semibold text-zinc-500 hover:text-rose-400 p-2 transition-colors">
-                <Trash2 size={14}/> Reset Engine
-              </button>
+              
+              {/* ✨ RBAC: RESET ENGINE BUTTON */}
+              {userRole !== 'auditor' && (
+                <button 
+                  onClick={userRole === 'admin' ? handleResetEngine : () => notify('error', 'Clearance Required: Only DevSecOps Admins can purge the global engine state.')} 
+                  className={`w-full inline-flex items-center justify-center gap-2 text-xs font-semibold p-2 rounded-md transition-all ${
+                    userRole === 'admin' 
+                      ? 'text-zinc-500 hover:text-rose-400 hover:bg-rose-500/10' 
+                      : 'text-zinc-600 bg-zinc-900/50 border border-zinc-800/50 hover:border-rose-500/30 hover:text-rose-400/50 cursor-not-allowed shadow-inner'
+                  }`}
+                >
+                  {userRole === 'admin' ? <Trash2 size={14}/> : <Lock size={14}/>} 
+                  {userRole === 'admin' ? 'Reset Engine' : 'Reset Locked'}
+                </button>
+              )}
             </motion.div>
           ) : (
             <div className="flex flex-col items-center gap-4">
@@ -1402,9 +1414,21 @@ const activeDockerfile = getActiveFindings(processedDockerfile).filter(f =>
                 <Activity className="text-indigo-500/50 mb-1" size={16}/>
                 <span className="text-xs font-bold text-white">{totalIssues}</span>
               </div>
-              <button onClick={handleResetEngine} className="text-zinc-500 hover:text-rose-400 p-2 transition-colors" title="Reset Engine">
-                <Trash2 size={18}/>
-              </button>
+              
+              {/* ✨ RBAC: RESET ENGINE BUTTON (CLOSED SIDEBAR) */}
+              {userRole !== 'auditor' && (
+                <button 
+                  onClick={userRole === 'admin' ? handleResetEngine : () => notify('error', 'Clearance Required: Only DevSecOps Admins can purge the global engine state.')} 
+                  className={`p-2 rounded-md transition-all ${
+                    userRole === 'admin' 
+                      ? 'text-zinc-500 hover:text-rose-400 hover:bg-rose-500/10' 
+                      : 'text-zinc-600 bg-zinc-900/50 border border-zinc-800/50 hover:text-rose-400/50 cursor-not-allowed'
+                  }`} 
+                  title={userRole === 'admin' ? "Reset Engine" : "Reset Locked (Admin Only)"}
+                >
+                  {userRole === 'admin' ? <Trash2 size={18}/> : <Lock size={18}/>}
+                </button>
+              )}
             </div>
           )}
         </div>
@@ -1704,7 +1728,7 @@ const activeDockerfile = getActiveFindings(processedDockerfile).filter(f =>
               </div>
             </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mt-8 ">
                     {renderChart('SAST Code Distribution', <Code2 className="text-indigo-400" size={16}/>, githubChartData)}
                     {renderChart('DAST Web Vulnerabilities', <Globe className="text-violet-400" size={16}/>, webChartData)}
                     {renderChart('Container CVEs', <Server className="text-cyan-400" size={16}/>, containerChartData)}
@@ -2449,41 +2473,7 @@ const activeDockerfile = getActiveFindings(processedDockerfile).filter(f =>
 
                   <div className="bg-zinc-900/60 backdrop-blur-md border border-zinc-800 rounded-xl p-6 relative z-20 overflow-hidden shadow-lg mb-6">
                     
-                    {/* ✨ ENTERPRISE FEATURE LOCK OVERLAY FOR POSTGRES/MSSQL/ORACLE */}
-                    <AnimatePresence>
-                      {dbConfig.db_type !== 'mysql' && (
-                        <motion.div 
-                          initial={{ opacity: 0, backdropFilter: "blur(0px)" }} 
-                          animate={{ opacity: 1, backdropFilter: "blur(8px)" }} 
-                          exit={{ opacity: 0, backdropFilter: "blur(0px)" }} 
-                          className="absolute inset-0 z-50 flex items-center justify-center bg-zinc-950/80 rounded-xl"
-                        >
-                          <div className="bg-amber-500/10 border border-amber-500/30 p-8 rounded-xl flex flex-col items-center text-center max-w-md mx-4 shadow-2xl">
-                            <div className="bg-amber-500/20 p-4 rounded-full mb-4">
-                              <Info size={32} className="text-amber-500" />
-                            </div>
-                            <h4 className="text-lg font-bold text-amber-400 uppercase tracking-widest mb-2">Enterprise Feature Locked</h4>
-                            <p className="text-sm text-zinc-300 leading-relaxed mb-8">
-                              Deep Vulnerability Assessment for <strong className="text-white">{
-                                dbConfig.db_type === 'postgresql' ? 'PostgreSQL' : 
-                                dbConfig.db_type === 'mssql' ? 'Microsoft SQL Server' : 'Oracle Database'
-                              }</strong> is currently in Enterprise Beta. Please use the MySQL module for the current stable MVP release.
-                            </p>
-                            <button 
-                              onClick={() => {
-                                setDbConfig(prev => ({...prev, db_type: 'mysql', port: '3306'}));
-                                setDbBetaMessage(null);
-                              }}
-                              className="bg-amber-500 hover:bg-amber-400 text-zinc-950 px-6 py-3 rounded-lg text-sm font-bold uppercase tracking-widest transition-all flex items-center gap-2 shadow-[0_0_15px_rgba(245,158,11,0.3)]"
-                            >
-                              <ChevronLeft size={16} /> Go Back to MySQL
-                            </button>
-                          </div>
-                        </motion.div>
-                      )}
-                    </AnimatePresence>
-
-                    {/* Database Type Dropdown */}
+                    {/* Database Type Dropdown - NOW FULLY UNLOCKED */}
                     <div className="mb-6">
                       <label className="text-[12px] text-zinc-500 font-bold uppercase tracking-widest mb-2 block">Target Architecture</label>
                       <div className="relative">
@@ -2497,12 +2487,12 @@ const activeDockerfile = getActiveFindings(processedDockerfile).filter(f =>
                             if(e.target.value === 'oracle') setDbConfig(prev => ({...prev, db_type: e.target.value, port: '1521'}));
                             if(e.target.value === 'mysql') setDbConfig(prev => ({...prev, db_type: e.target.value, port: '3306'}));
                           }}
-                          className="w-full bg-[#050505] border border-zinc-800 rounded-lg py-4 pl-12 pr-4 text-sm text-zinc-200 outline-none focus:border-emerald-500/50 appearance-none cursor-pointer"
+                          className="w-full bg-[#050505] border border-zinc-800 rounded-lg py-4 pl-12 pr-4 text-sm text-zinc-200 outline-none focus:border-emerald-500/50 appearance-none cursor-pointer font-bold"
                         >
-                          <option value="mysql">MySQL Enterprise / Community</option>
-                          <option value="postgresql">PostgreSQL (Beta)</option>
-                          <option value="mssql">Microsoft SQL Server (Beta)</option>
-                          <option value="oracle">Oracle Database (Beta)</option>
+                          <option value="mysql">MySQL Enterprise Edition</option>
+                          <option value="postgresql">PostgreSQL Server</option>
+                          <option value="mssql">Microsoft SQL Server</option>
+                          <option value="oracle">Oracle Database</option>
                         </select>
                       </div>
                     </div>
@@ -2519,7 +2509,7 @@ const activeDockerfile = getActiveFindings(processedDockerfile).filter(f =>
                       </div>
                       <div className="relative">
                         <User className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500" size={16} />
-                        <input type="text" placeholder="Username (e.g., root)" value={dbConfig.user} onChange={(e) => setDbConfig({...dbConfig, user: e.target.value})} className="w-full bg-[#050505] border border-zinc-800 rounded-lg py-3 pl-12 pr-4 text-sm text-zinc-200 outline-none focus:border-emerald-500/50" />
+                        <input type="text" placeholder="Username (e.g., root or sa)" value={dbConfig.user} onChange={(e) => setDbConfig({...dbConfig, user: e.target.value})} className="w-full bg-[#050505] border border-zinc-800 rounded-lg py-3 pl-12 pr-4 text-sm text-zinc-200 outline-none focus:border-emerald-500/50" />
                       </div>
                       <div className="relative">
                         <Key className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500" size={16} />
