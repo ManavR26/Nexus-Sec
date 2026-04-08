@@ -801,6 +801,7 @@ const activeDockerfile = getActiveFindings(processedDockerfile).filter(f =>
 
     try {
       const response = await fetch(`${API_BASE}/api/scan/database`, {
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(dbConfig)
       });
