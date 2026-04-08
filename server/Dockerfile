@@ -4,15 +4,15 @@ FROM python:3.9-slim
 # 2. Set the working directory inside the container
 WORKDIR /app
 
-# 3. Install system dependencies and Aqua Trivy (for Container Security scanning)
-# We need these to ensure the 'Container Audit' section of NexusSec works in the cloud.
+# 3. Install system dependencies and Aqua Trivy (Modern Secure Method)
 RUN apt-get update && apt-get install -y \
     wget \
     apt-transport-https \
     gnupg \
     lsb-release \
-    && wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | apt-key add - \
-    && echo deb https://aquasecurity.github.io/trivy-repo/deb $(lsb_release -sc) main | tee -a /etc/apt/sources.list.d/trivy.list \
+    && mkdir -p /etc/apt/keyrings \
+    && wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | gpg --dearmor -o /etc/apt/keyrings/trivy.gpg \
+    && echo "deb [signed-by=/etc/apt/keyrings/trivy.gpg] https://aquasecurity.github.io/trivy-repo/deb $(lsb_release -sc) main" | tee /etc/apt/sources.list.d/trivy.list \
     && apt-get update && apt-get install -y trivy \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
