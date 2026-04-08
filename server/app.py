@@ -337,7 +337,7 @@ def api_web_scan():
             The user has just executed a live web scan against this target: {target}
             
             Based on common web vulnerabilities, generate a highly realistic simulated DAST report. 
-            You MUST return a JSON object containing a single key "findings" which maps to an array of 3 to 5 vulnerabilities.
+            You MUST return a JSON object containing a single key "findings" which maps to an array of 7 to 15 vulnerabilities.
             
             Each vulnerability object in the array MUST have these exact keys:
             - "Issue": (String) The name of the vulnerability (e.g., "Reflected XSS", "SQL Injection").
